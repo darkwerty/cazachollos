@@ -1,0 +1,80 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: cazachollos_db
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - cazachollos-network
+
+  ingestor:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: cazachollos_ingestor
+    command: python cmd/run_ingestor.py
+    restart: unless-stopped
+    depends_on:
+      - db
+    env_file:
+      - .env
+    volumes:
+      - ./src:/app/src
+      - ./cmd:/app/cmd
+      - ./migrations:/app/migrations
+      - ./alembic.ini:/app/alembic.ini
+      - telegram_session:/app/session
+    networks:
+      - cazachollos-network
+
+  bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: cazachollos_bot
+    command: python cmd/run_bot.py
+    restart: unless-stopped
+    depends_on:
+      - db
+    env_file:
+      - .env
+    volumes:
+      - ./src:/app/src
+      - ./cmd:/app/cmd
+    networks:
+      - cazachollos-network
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: cazachollos_dashboard
+    command: streamlit run app.py --server.port 8501 --server.address 0.0.0.0
+    restart: unless-stopped
+    depends_on:
+      - db
+    env_file:
+      - .env
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./src:/app/src
+      - ./app.py:/app/app.py
+    networks:
+      - cazachollos-network
+
+volumes:
+  pgdata:
+  telegram_session:
+
+
+networks:
+  cazachollos-network:
+    driver: bridge

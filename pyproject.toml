@@ -1,0 +1,43 @@
+[tool.poetry]
+name = "cazachollos"
+version = "0.1.0"
+description = "Telegram offer monitor and dashboard"
+authors = ["Admin <admin@example.com>"]
+readme = "README.md"
+packages = [{include = "src"}]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+sqlalchemy = "^2.0.25"
+asyncpg = "^0.29.0"
+alembic = "^1.13.1"
+pydantic = "^2.5.3"
+pydantic-settings = "^2.1.0"
+telethon = "^1.33.1"
+# python-telegram-bot = "^20.7" # If needed for the bot interface alongside Telethon
+streamlit = "^1.30.0"
+altair = "^5.2.0"
+pandas = "^2.2.0"
+psycopg2-binary = "^2.9.9" # Useful for sync operations or checks
+python-dotenv = "^1.0.0"
+price-parser = "^0.3.4"
+google-generativeai = "^0.8.6"
+
+[tool.poetry.group.dev.dependencies]
+ruff = "^0.1.13"
+mypy = "^1.8.0"
+black = "^24.1.0"
+pytest = "^9.0.2"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+ignore_missing_imports = true
