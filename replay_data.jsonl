@@ -1,0 +1,3 @@
+{"content": "🔥 **Oferta Test 1**\nPrecio: 20€\nhttps://example.com/item1", "occurred_at": "2023-10-27T10:00:00", "source_metadata": {"chat_id": 123456}}
+{"content": "🔥 **Oferta Test 2 (2s later)**\nPrecio: 30€\nhttps://example.com/item2", "occurred_at": "2023-10-27T10:00:02", "source_metadata": {"chat_id": 123456}}
+{"content": "🔥 **Oferta Test 3 (3s later)**\nPrecio: 40€\nhttps://example.com/item3", "occurred_at": "2023-10-27T10:00:05", "source_metadata": {"chat_id": 123456}}

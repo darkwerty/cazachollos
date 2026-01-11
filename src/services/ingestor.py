@@ -1,9 +1,8 @@
-import hashlib
 import logging
+import hashlib
 import os
 from datetime import datetime
 
-from telethon import events
 from sqlalchemy.future import select
 
 from src.infrastructure.telegram.client import TelegramService
@@ -11,12 +10,13 @@ from src.domain.models import Deal, RawMessage
 from src.domain.schemas import DealCreate
 from src.infrastructure.db.session import AsyncSessionLocal
 from src.services.parser import DealParser
+from src.domain.ingestion.strategy import IngestionStrategy
 
 logger = logging.getLogger(__name__)
 
 class IngestorService:
-    def __init__(self, telegram_service: TelegramService):
-        self.telegram = telegram_service
+    def __init__(self, strategy: IngestionStrategy):
+        self.strategy = strategy
         self.parser = DealParser()
         self.allowed_groups = self._load_allowed_groups()
 
@@ -94,25 +94,26 @@ class IngestorService:
                 logger.error(f"Failed to save raw message: {e}")
                 await session.rollback()
 
-    async def _process_message(self, event):
-        chat = await event.get_chat()
-        sender_id = chat.id
-        title = getattr(chat, 'title', '') or getattr(chat, 'username', '') or str(sender_id)
-        
-        if not self._is_allowed_source(sender_id, title):
-             logger.info(f"Skipping message from {title} ({sender_id}) - Not in allowed list.")
-             return
+    async def _process_event(self, event):
+        # Extract metadata from generic event
+        meta = event.source_metadata
+        chat_id = meta.get('chat_id', 0)
+        title = meta.get('chat_title', str(chat_id))
+        msg_id = meta.get('msg_id', 0)
+        text = event.content
 
-        msg_id = event.message.id
-        text = event.message.text or ""
+        if not self._is_allowed_source(chat_id, title):
+             logger.info(f"Skipping message from {title} ({chat_id}) - Not in allowed list.")
+             return
 
         if not text:
             return
 
-        logger.info(f"Received message from {title} ({sender_id}): {text[:50]}...")
+        logger.info(f"Received message from {title} ({chat_id}): {text[:50]}...")
         
         # 1. Audit Log
-        await self._save_raw_message(sender_id, msg_id, text)
+        if msg_id: # Only save if we have a message ID (Replay might not or dummy)
+            await self._save_raw_message(chat_id, msg_id, text)
 
         # 2. Parse
         parsed_data = self.parser.parse(text)
@@ -155,16 +156,11 @@ class IngestorService:
             await session.commit()
             logger.info(f"Deal Saved: {new_deal.title}")
 
-
     async def start(self):
-        # Register the event handler
-        @self.telegram.client.on(events.NewMessage())
-        async def handler(event):
+        print("Ingestor Service Started...")
+        async for event in self.strategy.stream():
             try:
-                await self._process_message(event)
+                await self._process_event(event)
             except Exception as e:
-                logger.error(f"Error processing message: {e}", exc_info=True)
-        
-        await self.telegram.start()
-        print("Ingestor Service Started and Listening...")
-        await self.telegram.run_until_disconnected()
+                logger.error(f"Error processing event: {e}", exc_info=True)
+

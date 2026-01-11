@@ -442,7 +442,11 @@ class DealParser:
         price_before = prices_data['before']
         
         # Try LLM
-        llm_data = self.llm_provider.parse_deal(text)
+        try:
+            llm_data = self.llm_provider.parse_deal(text)
+        except Exception as e:
+            logger.error(f"LLM Provider failed unexpectedly: {e}")
+            llm_data = {}
         
         # Decide Title
         if llm_data.get('title') and llm_data.get('confidence', 0) > 0.7:
