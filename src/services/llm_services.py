@@ -66,5 +66,5 @@ class GeminiLLMProvider(LLMProvider):
             
             return data
         except Exception as e:
-            logger.error(f"Error calling Gemini LLM: {sizeBytes}")
+            logger.error(f"Error calling Gemini LLM: {e}")
             return {}
