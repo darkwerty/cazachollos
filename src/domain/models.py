@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import Optional
 from decimal import Decimal
 
-from sqlalchemy import String, Text, Numeric, Integer, DateTime, Boolean, Index, Computed
+from sqlalchemy import String, Text, Numeric, Integer, DateTime, Boolean, Index, Computed, BigInteger
 from sqlalchemy.dialects.postgresql import UUID, TSVECTOR
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -23,6 +23,7 @@ class Deal(Base):
     category: Mapped[CategoryEnum] = mapped_column(String, default=CategoryEnum.OTROS)
     shop: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     price_before: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 2), nullable=True)
+    discount_percentage: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     source: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     raw_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
@@ -45,7 +46,7 @@ class Deal(Base):
 class RawMessage(Base):
     __tablename__ = "raw_messages"
 
-    chat_id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    msg_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    chat_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    msg_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     raw_content: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
