@@ -375,14 +375,16 @@ class DealParser:
                         return category
         return CategoryEnum.OTROS
 
-    def calculate_score(self, price_sale: Decimal, price_before: Optional[Decimal], text: str) -> int:
+    def calculate_score(self, price_sale: Decimal, price_before: Optional[Decimal], text: str, discount_percentage: Optional[int] = None) -> int:
         """
         Calculates a 'chollo_score' from 0 to 100 based on discount and keywords.
         """
         score = 50 # Base score
         
         # 1. Discount Bonus
-        if price_sale and price_before and price_before > price_sale:
+        if discount_percentage:
+             score += discount_percentage
+        elif price_sale and price_before and price_before > price_sale:
             try:
                 # Calculate percentage discount
                 discount_pct = (price_before - price_sale) / price_before
@@ -391,7 +393,7 @@ class DealParser:
             except:
                 pass
         
-        # 2. Implied Discount (if no before price found)
+        # 2. Implied Discount (if no before price found and no discount_percentage provided)
         elif not price_before:
              # Look for "50% descuento" in text
              match = re.search(r'(\d+)%\s*(?:dto|descuento|off)', text, re.IGNORECASE)
@@ -434,12 +436,9 @@ class DealParser:
         """
         # Basic extraction
         url = self.extract_clean_url(text)
-        prices_data = self.extract_prices(text)
+        heuristic_prices_data = self.extract_prices(text)
         shop = self.extract_shop(text, url)
         source = self.extract_source(text)
-        
-        price_sale = prices_data['sale'] if prices_data['sale'] is not None else Decimal(0)
-        price_before = prices_data['before']
         
         # Try LLM
         try:
@@ -448,6 +447,36 @@ class DealParser:
             logger.error(f"LLM Provider failed unexpectedly: {e}")
             llm_data = {}
         
+        # Merge Price Logic
+        # Heuristics
+        h_price_sale = heuristic_prices_data.get('sale')
+        h_price_before = heuristic_prices_data.get('before')
+        
+        # LLM
+        l_price_sale = llm_data.get('price_sale')
+        l_price_before = llm_data.get('price_before')
+        l_discount = llm_data.get('discount_percentage')
+        
+        # Decision (Prioritize LLM if valid number)
+        price_sale = h_price_sale
+        if l_price_sale is not None and isinstance(l_price_sale, (int, float)):
+             price_sale = Decimal(str(l_price_sale))
+        elif h_price_sale is None:
+             price_sale = Decimal(0)
+
+        price_before = h_price_before
+        if l_price_before is not None and isinstance(l_price_before, (int, float)):
+             price_before = Decimal(str(l_price_before))
+             
+        # Discount logic
+        discount_percentage = l_discount
+        if discount_percentage is None:
+             # Calculate if we have both prices
+             if price_sale and price_before and price_before > price_sale:
+                  try:
+                       discount_percentage = int(((price_before - price_sale) / price_before) * 100)
+                  except: pass
+
         # Decide Title
         if llm_data.get('title') and llm_data.get('confidence', 0) > 0.7:
              title = llm_data['title']
@@ -460,7 +489,7 @@ class DealParser:
         else:
              category = self.determine_category_heuristic(text, title)
             
-        chollo_score = self.calculate_score(price_sale, price_before, text)
+        chollo_score = self.calculate_score(price_sale, price_before, text, discount_percentage)
         
         return {
             "title": title,
@@ -472,6 +501,7 @@ class DealParser:
             "shop": shop,
             "source": source,
             "raw_text": text,
-            "chollo_score": chollo_score
+            "chollo_score": chollo_score,
+            "discount_percentage": discount_percentage
         }
 

@@ -26,7 +26,7 @@ class GeminiLLMProvider(LLMProvider):
             self.model = None
         else:
             genai.configure(api_key=self.api_key)
-            self.model = genai.GenerativeModel('gemini-pro')
+            self.model = genai.GenerativeModel('gemini-2.5-flash')
 
     def parse_deal(self, text: str) -> Dict[str, Any]:
         if not self.model:
@@ -39,6 +39,10 @@ class GeminiLLMProvider(LLMProvider):
         2. "category": The most fitting category from this list: [{', '.join([c.value for c in CategoryEnum])}]. If unsure, use "otros".
         3. "confidence": A score from 0.0 to 1.0 indicating how confident you are that this is a legit product deal and you identified it correctly.
         4. "product_name": A short name of the product (e.g. "Samsung S24 Ultra").
+        5. "price_sale": The current sale price (number, float). If not found, use null.
+        6. "price_before": The original price before discount (number, float). If not found, use null.
+        7. "discount_percentage": The discount percentage explicitly stated or calculated (integer). If not found, use null.
+        8. "one_line_summary": A very short explanation of why this is a good deal (max 10 words).
 
         Text:
         {text}

@@ -21,7 +21,7 @@ pandas = "^2.2.0"
 psycopg2-binary = "^2.9.9" # Useful for sync operations or checks
 python-dotenv = "^1.0.0"
 price-parser = "^0.3.4"
-google-genai = "^1.0.0"
+google-generativeai = "^0.8.3"
 
 [tool.poetry.group.dev.dependencies]
 ruff = "^0.1.13"
