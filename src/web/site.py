@@ -112,13 +112,35 @@ def can_see(headers, allowed: str) -> tuple[bool, str | None]:
     return email in {e.strip().lower() for e in rule.split(",") if e.strip()}, email
 
 
-def create_app(finder=find_deals, allowed_emails: str | None = None, with_bot: bool = True) -> FastAPI:
+def create_app(finder=find_deals, allowed_emails: str | None = None, with_bot: bool = True, api=None) -> FastAPI:
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
     allowed = allowed_emails if allowed_emails is not None else os.getenv("ALLOWED_EMAILS", "")
     if with_bot:
         from src.web.bot_webhook import telegram_router
 
         app.include_router(telegram_router())
+    # JSON API for danielalonso.dev/cazachollos (Google ID token). Only when GOOGLE_CLIENT_ID is set.
+    client_id = os.getenv("GOOGLE_CLIENT_ID", "")
+    if api is None and client_id:
+        from src.services.accounts import AccountStore
+        from src.services.alerts import AlertStore
+        from src.web.api import api_router
+        from src.web.google_auth import google_verifier, user_dependency
+
+        api = api_router(user_dependency(google_verifier(client_id), client_id), AccountStore(), AlertStore())
+    if api is not None:
+        from fastapi.middleware.cors import CORSMiddleware
+
+        from src.web.api import CORS_ORIGINS
+
+        app.include_router(api)
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=CORS_ORIGINS,
+            allow_methods=["GET", "POST"],
+            allow_headers=["Authorization", "Content-Type"],
+            max_age=3600,
+        )
 
     @app.get("/health")
     async def health() -> dict:

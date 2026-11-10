@@ -60,6 +60,10 @@ param botToken string = ''
 param webhookSecret string = ''
 @description('Ids de Telegram que pueden usar el bot. Vacío: cualquiera')
 param telegramAllowedUsers string = ''
+@description('Usuario del bot, para el enlace de vinculación desde la web')
+param telegramBotUsername string = ''
+@description('Cliente de Google del login de danielalonso.dev (el de Mea culpa): la API comprueba que el token es para él')
+param portfolioGoogleClientId string = ''
 
 param budgetAmount int = 5
 param budgetStartDate string = utcNow('yyyy-MM-01')
@@ -273,6 +277,8 @@ resource web 'Microsoft.App/containerApps@2024-03-01' = {
           env: concat(dbEnv, [
             { name: 'ALLOWED_EMAILS', value: webAllowedEmails }
             { name: 'TELEGRAM_ALLOWED_USERS', value: telegramAllowedUsers }
+            { name: 'TELEGRAM_BOT_USERNAME', value: telegramBotUsername }
+            { name: 'GOOGLE_CLIENT_ID', value: portfolioGoogleClientId }
           ], botEnv, withBot ? [{ name: 'TELEGRAM_WEBHOOK_SECRET', secretRef: 'webhook-secret' }] : [])
           probes: [
             { type: 'Readiness', httpGet: { path: '/health', port: 8000 }, initialDelaySeconds: 2, periodSeconds: 10 }
@@ -292,8 +298,18 @@ resource webAuth 'Microsoft.App/containerApps/authConfigs@2024-03-01' = if (with
     globalValidation: {
       unauthenticatedClientAction: 'RedirectToLoginPage'
       redirectToProvider: 'google'
-      // Telegram llama al webhook sin login (lo protege la cabecera secreta) y la sonda de salud tampoco lo tiene
-      excludedPaths: ['/telegram/webhook', '/health']
+      // Sin el login de la plataforma: el webhook (lo protege la cabecera secreta), la sonda de salud y la API de
+      // danielalonso.dev/cazachollos, que exige el ID token de Google en cada petición (google_auth.py)
+      excludedPaths: [
+        '/telegram/webhook'
+        '/health'
+        '/api/ofertas'
+        '/api/yo'
+        '/api/alertas'
+        '/api/alertas/borrar'
+        '/api/telegram/vincular'
+        '/api/telegram/desvincular'
+      ]
     }
     identityProviders: {
       google: {

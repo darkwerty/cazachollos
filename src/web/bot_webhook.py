@@ -48,9 +48,10 @@ SEARCHES_PER_HOUR = 30
 
 
 class BotCommands:
-    def __init__(self, store, search, allowed: set[int], clock=time.monotonic) -> None:
+    def __init__(self, store, search, allowed: set[int], clock=time.monotonic, accounts=None) -> None:
         self.store = store
         self.search = search
+        self.accounts = accounts  # links the chat to a web account with /start <code>
         self.allowed = allowed  # empty: everyone
         self.clock = clock
         self._searches: dict[int, deque] = defaultdict(deque)
@@ -79,6 +80,14 @@ class BotCommands:
         command, _, arg = text.partition(" ")
         command = command.split("@")[0].lower()
 
+        if command == "/start" and arg.strip() and self.accounts is not None:
+            who = await self.accounts.link(arg.strip()[:32], chat_id)
+            if who is None:
+                return "Ese enlace ha caducado o ya se usó. Vuelve a pulsar «Conectar Telegram» en la web."
+            return (
+                f"✅ Listo: las alertas de <b>{html.escape(who)}</b> te llegarán aquí.\n\n"
+                "Créalas en la web o aquí mismo con <code>/alerta auriculares sony hasta 250</code>."
+            )
         if command in ("/start", "/ayuda", "/help"):
             return HELP
         if command == "/alerta":
@@ -135,7 +144,14 @@ def telegram_router(bot=None, commands: BotCommands | None = None, secret: str |
     if commands is None:
         from src.services.search import SearchService
 
-        commands = BotCommands(AlertStore(), SearchService(), allowed_users(os.getenv("TELEGRAM_ALLOWED_USERS", "")))
+        from src.services.accounts import AccountStore
+
+        commands = BotCommands(
+            AlertStore(),
+            SearchService(),
+            allowed_users(os.getenv("TELEGRAM_ALLOWED_USERS", "")),
+            accounts=AccountStore(),
+        )
 
     @router.post("/telegram/webhook")
     async def webhook(request: Request, x_telegram_bot_api_secret_token: str = Header(default="")) -> Response:
