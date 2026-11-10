@@ -1,38 +1,38 @@
+import logging
 import os
-import asyncio
+
 from telethon import TelegramClient
 from telethon.network.connection.tcpabridged import ConnectionTcpAbridged
 
+logger = logging.getLogger(__name__)
+
+
 class TelegramService:
     def __init__(self, session_name: str, api_id: int, api_hash: str):
-        self.session_path = os.path.join("session", session_name)
-        # Ensure session directory exists
+        # The session file is a login to the Telegram account: it lives in session/ (git and Docker ignore it)
         os.makedirs("session", exist_ok=True)
-        
-        self.client = TelegramClient(
-            self.session_path,
-            api_id,
-            api_hash,
-            connection=ConnectionTcpAbridged
-        )
+        self.session_path = os.path.join("session", session_name)
+        self.client = TelegramClient(self.session_path, api_id, api_hash, connection=ConnectionTcpAbridged)
 
-    async def start(self):
-        """Connects to Telegram. Requires interactive auth if no session exists."""
-        print(f"Connecting to Telegram with session: {self.session_path}...")
-        await self.client.connect()
-        
-        # This part usually requires interaction primarily for the first login
-        # In a headless container, we expect the session file to function
-        if not await self.client.is_user_authorized():
-             print("Warning: Client is not authorized. Interactive login might be required.")
-             # Start interactive login if not authorized
-             await self.client.start() 
+    async def start(self, bot_token: str | None = None):
+        """Connects and logs in: as a bot with `bot_token`, or as a user with the saved session.
 
-        print("Telegram Client Connected.")
+        The first user login is interactive (phone number and code): run the ingestor once with a terminal
+        (see the README). After that the session file is reused.
+        """
+        logger.info("Connecting to Telegram with session %s...", self.session_path)
+        if bot_token:
+            await self.client.start(bot_token=bot_token)
+        else:
+            await self.client.connect()
+            if not await self.client.is_user_authorized():
+                logger.warning("Client not authorized: starting the interactive login.")
+                await self.client.start()
+        logger.info("Telegram client connected.")
 
     async def stop(self):
         await self.client.disconnect()
-        print("Telegram Client Disconnected.")
+        logger.info("Telegram client disconnected.")
 
     def add_event_handler(self, callback, event):
         self.client.add_event_handler(callback, event)

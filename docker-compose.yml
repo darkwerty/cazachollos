@@ -1,69 +1,83 @@
+# docker compose up -d --build            demo: db, ingestor (REPLAY con replay_data.jsonl) y panel en :8501
+# docker compose --profile bot up -d      además, el bot de Telegram (necesita BOT_TOKEN)
 services:
   db:
     image: postgres:16-alpine
     container_name: cazachollos_db
-    restart: always
+    restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"  # solo desde esta máquina
     volumes:
       - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
     networks:
       - cazachollos-network
 
   ingestor:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    build: .
     container_name: cazachollos_ingestor
-    command: python cmd/run_ingestor.py
-    restart: unless-stopped
+    # Aplica las migraciones antes de arrancar: no hace falta ningún paso a mano
+    command: sh -c "alembic upgrade head && python cmd/run_ingestor.py"
+    restart: on-failure  # en REPLAY termina al acabar el fichero y no se repite
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     env_file:
       - .env
+    environment:
+      POSTGRES_HOST: db
     volumes:
       - ./src:/app/src
       - ./cmd:/app/cmd
       - ./migrations:/app/migrations
       - ./alembic.ini:/app/alembic.ini
+      - ./replay_data.jsonl:/app/replay_data.jsonl:ro
       - telegram_session:/app/session
     networks:
       - cazachollos-network
 
   bot:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    build: .
     container_name: cazachollos_bot
     command: python cmd/run_bot.py
     restart: unless-stopped
+    profiles: ["bot"]
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     env_file:
       - .env
+    environment:
+      POSTGRES_HOST: db
     volumes:
       - ./src:/app/src
       - ./cmd:/app/cmd
+      - telegram_session:/app/session
     networks:
       - cazachollos-network
 
   dashboard:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    build: .
     container_name: cazachollos_dashboard
     command: streamlit run app.py --server.port 8501 --server.address 0.0.0.0
     restart: unless-stopped
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     env_file:
       - .env
+    environment:
+      POSTGRES_HOST: db
     ports:
-      - "8501:8501"
+      - "127.0.0.1:8501:8501"
     volumes:
       - ./src:/app/src
       - ./app.py:/app/app.py
@@ -73,7 +87,6 @@ services:
 volumes:
   pgdata:
   telegram_session:
-
 
 networks:
   cazachollos-network:

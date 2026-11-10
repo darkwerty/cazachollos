@@ -1,45 +1,53 @@
+"""Ingestor: listens to the Telegram groups (LIVE) or replays a JSONL file (REPLAY) and stores the deals."""
+
 import asyncio
-import os
 import logging
-from src.infrastructure.telegram.client import TelegramService
-from src.infrastructure.ingestion.factory import IngestionFactory
-from src.services.ingestor import IngestorService
+import os
+import sys
+
 from dotenv import load_dotenv
 
-# Load env in case it's run locally without docker-compose for testing
+from src.infrastructure.ingestion.factory import IngestionFactory
+from src.infrastructure.telegram.client import TelegramService
+from src.services.ingestor import IngestorService
+
+# Load env in case it's run locally without docker compose
 load_dotenv()
+logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO").upper())
+logger = logging.getLogger("cazachollos.ingestor")
 
-logging.basicConfig(level=logging.INFO)
 
-async def main():
-    api_id = os.getenv("TELEGRAM_API_ID")
-    api_hash = os.getenv("TELEGRAM_API_HASH")
-    session_name = os.getenv("TELEGRAM_SESSION_NAME", "cazachollos_ingestor")
+async def main() -> int:
     mode = os.getenv("INGESTION_MODE", "LIVE").upper()
-
     telegram_service = None
     if mode == "LIVE":
+        api_id = os.getenv("TELEGRAM_API_ID")
+        api_hash = os.getenv("TELEGRAM_API_HASH")
         if not api_id or not api_hash:
-            print("Error: TELEGRAM_API_ID or TELEGRAM_API_HASH not set but required for LIVE mode.")
-            return
-
+            logger.error(
+                "TELEGRAM_API_ID and TELEGRAM_API_HASH are required in LIVE mode (or use INGESTION_MODE=REPLAY)."
+            )
+            return 1
         try:
-            telegram_service = TelegramService(session_name, int(api_id), api_hash)
+            api_id_int = int(api_id)
         except ValueError:
-            print(f"Error: TELEGRAM_API_ID in .env must be an integer. Current value: '{api_id}'")
-            return
+            logger.error("TELEGRAM_API_ID must be an integer, got %r", api_id)
+            return 1
+        session_name = os.getenv("TELEGRAM_SESSION_NAME", "cazachollos_ingestor")
+        telegram_service = TelegramService(session_name, api_id_int, api_hash)
 
     try:
-        # Get the appropriate strategy from the factory
         strategy = IngestionFactory.get_strategy(telegram_service)
-        ingestor = IngestorService(strategy)
-        
-        await ingestor.start()
-    except Exception as e:
-        logger.error(f"Failed to start ingestor: {e}")
+        await IngestorService(strategy).start()
+    except Exception:
+        logger.exception("Ingestor failed")
+        return 1
+    logger.info("Ingestion finished (%s mode).", mode)
+    return 0
+
 
 if __name__ == "__main__":
     try:
-        asyncio.run(main())
+        sys.exit(asyncio.run(main()))
     except KeyboardInterrupt:
-        print("Ingestor stopped.")
+        logger.info("Ingestor stopped.")

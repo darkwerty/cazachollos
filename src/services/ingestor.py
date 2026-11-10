@@ -1,18 +1,17 @@
-import logging
+import asyncio
 import hashlib
+import logging
 import os
-from datetime import datetime
 
 from sqlalchemy.future import select
 
-from src.infrastructure.telegram.client import TelegramService
 from src.domain.models import Deal, RawMessage
-from src.domain.schemas import DealCreate
 from src.infrastructure.db.session import AsyncSessionLocal
 from src.services.parser import DealParser
 from src.domain.ingestion.strategy import IngestionStrategy
 
 logger = logging.getLogger(__name__)
+
 
 class IngestorService:
     def __init__(self, strategy: IngestionStrategy):
@@ -25,7 +24,7 @@ class IngestorService:
         env_val = os.getenv("TELEGRAM_ALLOWED_GROUPS", "")
         if not env_val:
             return set()
-        
+
         allowed = set()
         for item in env_val.split(","):
             item = item.strip()
@@ -42,8 +41,8 @@ class IngestorService:
     def _is_allowed_source(self, chat_id: int, title: str) -> bool:
         """Checks if the source is allowed based on config."""
         if not self.allowed_groups:
-            return True # Allow all if config is empty
-        
+            return True  # Allow all if config is empty
+
         # Check title
         if title in self.allowed_groups:
             return True
@@ -60,12 +59,9 @@ class IngestorService:
             pass
 
         # Check negated ID (useful if ID is positive but config has negative)
-        try:
-             if -chat_id in self.allowed_groups:
-                 return True
-        except Exception:
-            pass
-            
+        if -chat_id in self.allowed_groups:
+            return True
+
         # Check without -100 prefix (if incoming has it but config doesn't)
         s_id = str(chat_id)
         if s_id.startswith("-100"):
@@ -74,15 +70,15 @@ class IngestorService:
                     return True
             except ValueError:
                 pass
-                
+
         return False
 
-    def _generate_content_hash(self, url: str, price: float, title_part: str) -> str:
-        """Generates a MD5 hash for deduplication."""
+    def _generate_content_hash(self, url: str | None, price, title_part: str) -> str:
+        """MD5 of the clean URL, the price and the start of the title, for deduplication (not for security)."""
         # Mix key elements to avoid processing the exact same deal
-        # If url is missing, use full text hash (less reliable but fallback)
+        # If url is missing, use the title only (less reliable but fallback)
         content_key = f"{url}-{price}-{title_part}" if url else f"{title_part}"
-        return hashlib.md5(content_key.encode('utf-8')).hexdigest()
+        return hashlib.md5(content_key.encode("utf-8"), usedforsecurity=False).hexdigest()
 
     async def _save_raw_message(self, chat_id: int, msg_id: int, content: str):
         async with AsyncSessionLocal() as session:
@@ -97,36 +93,34 @@ class IngestorService:
     async def _process_event(self, event):
         # Extract metadata from generic event
         meta = event.source_metadata
-        chat_id = meta.get('chat_id', 0)
-        title = meta.get('chat_title', str(chat_id))
-        msg_id = meta.get('msg_id', 0)
+        chat_id = meta.get("chat_id", 0)
+        title = meta.get("chat_title", str(chat_id))
+        msg_id = meta.get("msg_id", 0)
         text = event.content
 
         if not self._is_allowed_source(chat_id, title):
-             logger.info(f"Skipping message from {title} ({chat_id}) - Not in allowed list.")
-             return
+            logger.info(f"Skipping message from {title} ({chat_id}) - Not in allowed list.")
+            return
 
         if not text:
             return
 
         logger.info(f"Received message from {title} ({chat_id}): {text[:50]}...")
-        
+
         # 1. Audit Log
-        if msg_id: # Only save if we have a message ID (Replay might not or dummy)
+        if msg_id:  # Only save if we have a message ID (Replay might not or dummy)
             await self._save_raw_message(chat_id, msg_id, text)
 
-        # 2. Parse
-        parsed_data = self.parser.parse(text)
-        
-        if not parsed_data['url'] and parsed_data['price_sale'] == 0:
+        # 2. Parse (the LLM call is blocking: it runs in a thread so the event loop keeps receiving messages)
+        parsed_data = await asyncio.to_thread(self.parser.parse, text)
+
+        if not parsed_data["url"] and parsed_data["price_sale"] is None:
             logger.info("Message ignored: No URL and No Price found.")
             return
 
         # 3. Deduplication
         content_hash = self._generate_content_hash(
-            parsed_data['url'], 
-            parsed_data['price_sale'], 
-            parsed_data['title'][:20]
+            parsed_data["url"], parsed_data["price_sale"], parsed_data["title"][:20]
         )
 
         async with AsyncSessionLocal() as session:
@@ -141,15 +135,16 @@ class IngestorService:
             # 4. Save Deal
             new_deal = Deal(
                 content_hash=content_hash,
-                title=parsed_data['title'],
-                description=parsed_data['description'],
-                price_sale=parsed_data['price_sale'],
-                url=parsed_data['url'] or "",
-                category=parsed_data['category'],
-                chollo_score=parsed_data.get('chollo_score', 50),
-                shop=parsed_data.get('shop'),
-                price_before=parsed_data.get('price_before'),
-                source=parsed_data.get('source') or title,
+                title=parsed_data["title"][:255],
+                description=parsed_data["description"],
+                price_sale=parsed_data["price_sale"],
+                url=parsed_data["url"] or "",
+                category=parsed_data["category"],
+                chollo_score=parsed_data.get("chollo_score", 50),
+                shop=parsed_data.get("shop"),
+                price_before=parsed_data.get("price_before"),
+                discount_percentage=parsed_data.get("discount_percentage"),
+                source=(parsed_data.get("source") or title)[:100],
                 raw_text=text,
             )
             session.add(new_deal)
@@ -157,10 +152,9 @@ class IngestorService:
             logger.info(f"Deal Saved: {new_deal.title}")
 
     async def start(self):
-        print("Ingestor Service Started...")
+        logger.info("Ingestor Service Started...")
         async for event in self.strategy.stream():
             try:
                 await self._process_event(event)
             except Exception as e:
                 logger.error(f"Error processing event: {e}", exc_info=True)
-

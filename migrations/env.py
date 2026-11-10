@@ -9,7 +9,6 @@ from alembic import context
 
 # Import your Base model here to support 'autogenerate'
 from src.infrastructure.db.session import Base
-from src.domain.models import Deal, RawMessage # Import models later
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -42,7 +41,9 @@ def run_migrations_offline() -> None:
     script output.
 
     """
-    url = config.get_main_option("sqlalchemy.url")
+    from src.infrastructure.db.config import settings
+
+    url = settings.DATABASE_URL  # same database as online mode, not the placeholder in alembic.ini
     context.configure(
         url=url,
         target_metadata=target_metadata,
@@ -70,9 +71,9 @@ async def run_migrations_online() -> None:
     """
     # Import settings to override alembic.ini url
     from src.infrastructure.db.config import settings
-    
+
     configuration = config.get_section(config.config_ini_section)
-    configuration["sqlalchemy.url"] = settings.DATABASE_URL.replace("postgresql+asyncpg", "postgresql+asyncpg")
+    configuration["sqlalchemy.url"] = settings.DATABASE_URL
 
     connectable = async_engine_from_config(
         configuration,

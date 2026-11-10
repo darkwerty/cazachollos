@@ -1,5 +1,15 @@
 .venv
 __pycache__
-.git
-.pytest_cache
 *.pyc
+.git
+.github
+.pytest_cache
+.ruff_cache
+# Secretos y sesiones: nunca dentro de la imagen (llegan por env_file y por el volumen de la sesión)
+.env
+session/
+*.session
+*.session-journal
+replay_privado.jsonl
+docs/
+tests/

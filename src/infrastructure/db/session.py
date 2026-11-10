@@ -5,21 +5,18 @@ from .config import settings
 # Create Async Engine
 engine = create_async_engine(
     settings.DATABASE_URL,
-    echo=False, # Set to True for SQL query logging
-    future=True
+    echo=False,  # Set to True for SQL query logging
+    future=True,
 )
 
 # Create Session Factory
-AsyncSessionLocal = async_sessionmaker(
-    bind=engine,
-    class_=AsyncSession,
-    expire_on_commit=False,
-    autoflush=False
-)
+AsyncSessionLocal = async_sessionmaker(bind=engine, class_=AsyncSession, expire_on_commit=False, autoflush=False)
+
 
 # Base Model Class
 class Base(DeclarativeBase):
     pass
+
 
 # Dependency for FastAPI/others
 async def get_db():
