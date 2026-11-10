@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 from src.infrastructure.ingestion.factory import IngestionFactory
 from src.infrastructure.telegram.client import TelegramService
 from src.services.ingestor import IngestorService
+from src.services.schedule import within_active_hours
 
 # Load env in case it's run locally without docker compose
 load_dotenv()
@@ -19,6 +20,11 @@ logger = logging.getLogger("cazachollos.ingestor")
 
 async def main() -> int:
     mode = os.getenv("INGESTION_MODE", "LIVE").upper()
+    # Scheduled passes (WEB): outside ACTIVE_HOURS (Madrid time, e.g. "7-24") the pass ends right away
+    active = os.getenv("ACTIVE_HOURS", "")
+    if mode == "WEB" and not within_active_hours(active):
+        logger.info("Outside the active hours (%s, Madrid time): nothing to do.", active)
+        return 0
     telegram_service = None
     if mode == "LIVE":
         api_id = os.getenv("TELEGRAM_API_ID")

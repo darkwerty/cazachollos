@@ -1,9 +1,9 @@
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from typing import Optional
 from decimal import Decimal
 
-from sqlalchemy import String, Text, Numeric, Integer, DateTime, Index, Computed, BigInteger
+from sqlalchemy import BigInteger, Computed, Date, DateTime, Index, Integer, Numeric, String, Text
 from sqlalchemy.dialects.postgresql import UUID, TSVECTOR
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -41,6 +41,15 @@ class Deal(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     __table_args__ = (Index("ix_deals_search_vector", "search_vector", postgresql_using="gin"),)
+
+
+class LLMUsage(Base):
+    """LLM calls per day (UTC), for the daily cap: each pass is a new process, so it lives in the DB."""
+
+    __tablename__ = "llm_usage"
+
+    day: Mapped[date] = mapped_column(Date, primary_key=True)
+    calls: Mapped[int] = mapped_column(Integer, default=0)
 
 
 class RawMessage(Base):

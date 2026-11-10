@@ -11,8 +11,9 @@ Grupos de Telegram ──► ingestor ──► PostgreSQL ◄── bot de Tele
  (o un JSONL)          parser          (FTS)    ◄── panel en Streamlit (:8501)
 ```
 
-1. **Ingesta.** Un cliente de Telegram (Telethon) escucha los grupos elegidos. Para probarlo sin Telegram, el
-   mismo servicio puede reproducir un fichero JSONL de mensajes con sus tiempos (modo `REPLAY`).
+1. **Ingesta.** Tres fuentes con la misma interfaz: canales públicos leídos desde su vista web
+   (`https://t.me/s/<canal>`, modo `WEB`, sin cuenta de Telegram), un cliente de Telegram (Telethon) que escucha
+   grupos con tu cuenta (`LIVE`) o un fichero JSONL de mensajes con sus tiempos para probarlo (`REPLAY`).
 2. **Extracción.** Reglas fijas sacan el enlace (quitando `utm_*`, `tag`, `ref` y acortando Amazon a `/dp/ID`),
    el precio y el precio anterior, la tienda, la categoría y un título limpio. Si hay clave de Gemini, un LLM
    extrae lo mismo en **salida estructurada** validada con Pydantic; si falla, se sale de rango o no está seguro
@@ -58,9 +59,39 @@ oferta) y termina. En el panel puedes buscar, por ejemplo, `auriculares` o `"fre
 
 El fichero de sesión equivale a tu cuenta de Telegram: no lo compartas. Git y Docker lo ignoran.
 
+## En Azure
+
+Así funciona ahora mismo con 11 canales públicos de ofertas (`infra/main.bicep`):
+
+- Un **Container Apps Job** programado cada 15 minutos lee los canales en modo `WEB` y termina. Fuera de 7:00 a
+  24:00 (hora de Madrid) la pasada acaba sin hacer nada. Cada canal sigue desde el último mensaje guardado, así
+  que lo publicado de noche se recoge a las 7:00. No hay ninguna cuenta de Telegram en juego.
+- **PostgreSQL Flexible Server** B1ms con TLS obligatorio y acceso solo desde servicios de Azure.
+- El **panel** es una Container App que escala a cero, detrás del login integrado de Container Apps (Entra ID)
+  y abierto solo a las cuentas indicadas.
+- La IA es **Azure OpenAI** (`gpt-4.1-nano`) con identidad administrada, sin claves. Solo se le pregunta cuando
+  las reglas dudan (sin precio, sin categoría o con un título raro), los repetidos se descartan antes de llamarla
+  y hay un tope diario de llamadas (`LLM_MAX_CALLS_PER_DAY`).
+- Reutiliza el Container Registry y la cuenta de Foundry de Mea culpa, y tiene su propio presupuesto con avisos.
+
+Desplegar:
+
+```bash
+az acr build -r <acr> -t cazachollos:<sha> .
+IMAGE=<acr>.azurecr.io/cazachollos:<sha> PG_PASSWORD=<contraseña>   az deployment group create -g rg-cazachollos -f infra/main.bicep -p infra/main.bicepparam
+```
+
+El primer despliegue deja el panel sin publicar. Con un registro de aplicación de Entra ID (redirección
+`https://<panel>/.auth/login/aad/callback`), se vuelve a desplegar con `AUTH_CLIENT_ID`, `AUTH_CLIENT_SECRET` y
+`AUTH_ALLOWED_OBJECT_ID`, y el panel queda publicado con login.
+
+Todo son contenedores, Postgres estándar y variables de entorno: para otra nube basta con otro programador de
+tareas (CronJob de Kubernetes, Cloud Run Jobs...) y otro Postgres. El proveedor de IA se cambia con `LLM_PROVIDER`.
+
 ## LLM
 
-Opcional. Con `GEMINI_API_KEY` se usa `GEMINI_MODEL` (por defecto `gemini-3.5-flash-lite`, un modelo barato pensado
+Opcional, con `LLM_PROVIDER`: `azure` (Azure OpenAI con Entra ID, `AZURE_OPENAI_ENDPOINT` y
+`AZURE_OPENAI_DEPLOYMENT`), `gemini` o `none`. Con `GEMINI_API_KEY` se usa `GEMINI_MODEL` (por defecto `gemini-3.5-flash-lite`, un modelo barato pensado
 para extraer datos en volumen). El mensaje va marcado como dato y no como instrucción, y la respuesta tiene que
 cumplir el esquema de `DealExtraction` (`src/services/llm_services.py`): si no, se descarta entera.
 

@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 class IngestionSourceType(str, Enum):
     LIVE = "LIVE"
     REPLAY = "REPLAY"
+    WEB = "WEB"  # public channels through t.me/s/<channel>, no account
 
 
 class IngestionEvent(BaseModel):
