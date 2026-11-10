@@ -14,10 +14,18 @@ logger = logging.getLogger(__name__)
 
 
 class IngestorService:
-    def __init__(self, strategy: IngestionStrategy):
+    def __init__(self, strategy: IngestionStrategy, parser: DealParser | None = None, budget=None):
         self.strategy = strategy
-        self.parser = DealParser()
+        self.parser = parser or DealParser()
+        self._budget = budget  # LLMBudget; created on first use so the tests need no database
         self.allowed_groups = self._load_allowed_groups()
+
+    async def _llm_allowed(self) -> bool:
+        if self._budget is None:
+            from src.infrastructure.db.usage import LLMBudget
+
+            self._budget = LLMBudget()
+        return await self._budget.allow()
 
     def _load_allowed_groups(self) -> set:
         """Loads allowed groups from env var. Returns a set of strings (titles) and ints (ids)."""
@@ -111,28 +119,29 @@ class IngestorService:
         if msg_id:  # Only save if we have a message ID (Replay might not or dummy)
             await self._save_raw_message(chat_id, msg_id, text)
 
-        # 2. Parse (the LLM call is blocking: it runs in a thread so the event loop keeps receiving messages)
-        parsed_data = await asyncio.to_thread(self.parser.parse, text)
+        # 2. Parse with the rules only (free): enough to discard non-deals and duplicates before any LLM call
+        rules = self.parser.parse(text, use_llm=False)
 
-        if not parsed_data["url"] and parsed_data["price_sale"] is None:
+        if not rules["url"] and rules["price_sale"] is None:
             logger.info("Message ignored: No URL and No Price found.")
             return
 
-        # 3. Deduplication
-        content_hash = self._generate_content_hash(
-            parsed_data["url"], parsed_data["price_sale"], parsed_data["title"][:20]
-        )
+        # 3. Deduplication (on the rules' fields, so the hash does not depend on what the LLM says)
+        content_hash = self._generate_content_hash(rules["url"], rules["price_sale"], rules["title"][:20])
 
         async with AsyncSessionLocal() as session:
-            # Check if exists
             result = await session.execute(select(Deal).filter_by(content_hash=content_hash))
-            existing_deal = result.scalar_one_or_none()
-
-            if existing_deal:
+            if result.scalar_one_or_none():
                 logger.info(f"Duplicate deal ignored (Hash: {content_hash})")
                 return
 
-            # 4. Save Deal
+        # 4. LLM only when the rules left doubts and today's budget allows it. The call is blocking: in a thread.
+        parsed_data = rules
+        if self.parser.llm_enabled and self.parser.needs_llm(rules) and await self._llm_allowed():
+            parsed_data = await asyncio.to_thread(self.parser.parse, text)
+
+        async with AsyncSessionLocal() as session:
+            # 5. Save Deal
             new_deal = Deal(
                 content_hash=content_hash,
                 title=parsed_data["title"][:255],

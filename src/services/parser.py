@@ -6,14 +6,14 @@ from typing import Optional, List
 from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 from price_parser import Price
 from src.domain.enums import CategoryEnum
-from src.services.llm_services import GeminiLLMProvider, LLMProvider
+from src.services.llm_services import LLMProvider, make_llm_provider
 
 logger = logging.getLogger(__name__)
 
 
 class DealParser:
     def __init__(self, llm_provider: Optional[LLMProvider] = None):
-        self.llm_provider = llm_provider or GeminiLLMProvider()
+        self.llm_provider = llm_provider or make_llm_provider()
 
         # Category keywords (expanded)
         self.categories_keywords = {
@@ -550,10 +550,24 @@ class DealParser:
         # Cap score
         return max(0, min(100, score))
 
-    def parse(self, text: str) -> dict:
+    @property
+    def llm_enabled(self) -> bool:
+        return bool(getattr(self.llm_provider, "enabled", True))
+
+    @staticmethod
+    def needs_llm(result: dict) -> bool:
+        """Whether the rules alone left doubts worth paying an LLM call for."""
+        title = result.get("title") or ""
+        return (
+            result.get("price_sale") is None
+            or result.get("category") in (CategoryEnum.OTROS, CategoryEnum.OTROS.value)
+            or not 8 <= len(title) <= 120
+        )
+
+    def parse(self, text: str, use_llm: bool = True) -> dict:
         """
         Main parse method.
-        Attempts to use LLM first, merges with heuristics.
+        With use_llm, asks the LLM too and merges with the rules; without it, only the rules (free).
         """
         # Basic extraction
         url = self.extract_clean_url(text)
@@ -563,7 +577,7 @@ class DealParser:
 
         # Try LLM
         try:
-            llm_data = self.llm_provider.parse_deal(text)
+            llm_data = self.llm_provider.parse_deal(text) if use_llm else {}
         except Exception as e:
             logger.error(f"LLM Provider failed unexpectedly: {e}")
             llm_data = {}

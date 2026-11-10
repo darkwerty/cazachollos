@@ -4,6 +4,7 @@ from typing import Optional
 from src.domain.ingestion.strategy import IngestionStrategy
 from src.domain.ingestion.models import IngestionSourceType
 from src.infrastructure.ingestion.live_telegram import LiveTelegramStrategy
+from src.infrastructure.ingestion.public_channels import PublicChannelsStrategy
 from src.infrastructure.ingestion.replay_file import ReplayFileStrategy
 from src.infrastructure.telegram.client import TelegramService
 
@@ -21,6 +22,14 @@ class IngestionFactory:
             file_path = os.getenv("REPLAY_SOURCE_FILE", "replay_data.jsonl")
             speed_factor = float(os.getenv("REPLAY_SPEED_FACTOR", "1.0"))
             return ReplayFileStrategy(file_path, speed_factor)
+
+        elif mode == IngestionSourceType.WEB.value:
+            from src.infrastructure.db.usage import last_msg_id
+
+            channels = [c for c in os.getenv("TELEGRAM_PUBLIC_CHANNELS", "").split(",") if c.strip()]
+            if not channels:
+                raise ValueError("TELEGRAM_PUBLIC_CHANNELS is required for WEB ingestion mode.")
+            return PublicChannelsStrategy(channels, cursor=last_msg_id)
 
         elif mode == IngestionSourceType.LIVE.value:
             if not telegram_service:

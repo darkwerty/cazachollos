@@ -133,3 +133,80 @@ class GeminiLLMProvider(LLMProvider):
         out = data.model_dump()
         out["category"] = data.category.value
         return out
+
+
+class AzureOpenAILLMProvider(LLMProvider):
+    """Azure OpenAI (for example gpt-4.1-mini) with structured outputs and Entra ID: no API key.
+
+    In Azure it signs in with the managed identity (AZURE_CLIENT_ID); locally, with `az login`.
+    """
+
+    API_VERSION = "2024-10-21"
+
+    def __init__(self, endpoint: str | None = None, deployment: str | None = None, client: Any = None) -> None:
+        self.deployment = deployment or os.getenv("AZURE_OPENAI_DEPLOYMENT") or "gpt-4.1-mini"
+        self.client = client
+        if self.client is None:
+            endpoint = endpoint or os.getenv("AZURE_OPENAI_ENDPOINT")
+            if not endpoint:
+                logger.warning("Sin AZURE_OPENAI_ENDPOINT: se usan solo las reglas fijas.")
+                return
+            from azure.identity import DefaultAzureCredential, get_bearer_token_provider
+            from openai import AzureOpenAI
+
+            token = get_bearer_token_provider(
+                DefaultAzureCredential(managed_identity_client_id=os.getenv("AZURE_CLIENT_ID")),
+                "https://cognitiveservices.azure.com/.default",
+            )
+            self.client = AzureOpenAI(
+                azure_endpoint=endpoint,
+                azure_ad_token_provider=token,
+                api_version=self.API_VERSION,
+                timeout=TIMEOUT_MS / 1000,
+                max_retries=2,
+            )
+
+    @property
+    def enabled(self) -> bool:
+        return self.client is not None
+
+    def parse_deal(self, text: str) -> dict[str, Any]:
+        if not self.enabled:
+            return {}
+        prompt = PROMPT.format(categories=", ".join(c.value for c in CategoryEnum), text=text)
+        try:
+            completion = self.client.beta.chat.completions.parse(
+                model=self.deployment,
+                messages=[{"role": "user", "content": prompt}],
+                response_format=DealExtraction,
+                temperature=0,
+                max_tokens=400,
+            )
+            content = completion.choices[0].message.content or ""
+            data = DealExtraction.model_validate_json(content)
+        except ValidationError as e:
+            logger.warning("Respuesta del LLM no válida, se usan las reglas: %s", e.errors()[:3])
+            return {}
+        except Exception as e:  # noqa: BLE001 - a failing LLM cannot stop the ingestion
+            logger.error("Error llamando a Azure OpenAI (%s): %s", self.deployment, e)
+            return {}
+        out = data.model_dump()
+        out["category"] = data.category.value
+        return out
+
+
+class NoLLMProvider(LLMProvider):
+    enabled = False
+
+    def parse_deal(self, text: str) -> dict[str, Any]:
+        return {}
+
+
+def make_llm_provider() -> LLMProvider:
+    """LLM_PROVIDER: azure, gemini or none. Without it: Gemini if there is a key, otherwise only the rules."""
+    choice = (os.getenv("LLM_PROVIDER") or "").strip().lower()
+    if choice == "azure":
+        return AzureOpenAILLMProvider()
+    if choice == "none":
+        return NoLLMProvider()
+    return GeminiLLMProvider()
