@@ -1,7 +1,7 @@
 import unittest
 from decimal import Decimal
 from src.services.parser import DealParser
-from src.domain.enums import CategoryEnum
+
 
 class TestParserImprovements(unittest.TestCase):
     def setUp(self):
@@ -41,7 +41,7 @@ class TestParserImprovements(unittest.TestCase):
         score = self.parser.calculate_score(Decimal(50), Decimal(100), "text")
         # Base 50 + 50 (discount) = 100
         self.assertEqual(score, 100)
-        
+
         # 20% discount
         score = self.parser.calculate_score(Decimal(80), Decimal(100), "text")
         # Base 50 + 20 = 70
@@ -57,5 +57,6 @@ class TestParserImprovements(unittest.TestCase):
         score = self.parser.calculate_score(Decimal(0), Decimal(10), "Gratis")
         self.assertEqual(score, 100)
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     unittest.main()

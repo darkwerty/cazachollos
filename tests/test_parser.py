@@ -3,6 +3,7 @@ from decimal import Decimal
 from src.domain.enums import CategoryEnum
 from src.services.parser import DealParser
 
+
 class TestDealParser(unittest.TestCase):
     def setUp(self):
         self.parser = DealParser()
@@ -15,15 +16,19 @@ class TestDealParser(unittest.TestCase):
     def test_extract_prices(self):
         text = "Price is 19.99€ only!"
         # New API returns dict
-        self.assertEqual(self.parser.extract_prices(text)['sale'], Decimal("19.99"))
-        
+        self.assertEqual(self.parser.extract_prices(text)["sale"], Decimal("19.99"))
+
         text2 = "Oferta: 1.200,50 EUR"
-        self.assertEqual(self.parser.extract_prices(text2)['sale'], Decimal("1200.50"))
+        self.assertEqual(self.parser.extract_prices(text2)["sale"], Decimal("1200.50"))
 
     def test_determine_category(self):
         # Now requires title arg
-        self.assertEqual(self.parser.determine_category_heuristic("Nuevo iPhone 15", "iPhone 15"), CategoryEnum.TECNOLOGIA)
-        self.assertEqual(self.parser.determine_category_heuristic("Sartén antiadherente", "Sarten"), CategoryEnum.COCINA)
+        self.assertEqual(
+            self.parser.determine_category_heuristic("Nuevo iPhone 15", "iPhone 15"), CategoryEnum.TECNOLOGIA
+        )
+        self.assertEqual(
+            self.parser.determine_category_heuristic("Sartén antiadherente", "Sarten"), CategoryEnum.COCINA
+        )
         self.assertEqual(self.parser.determine_category_heuristic("Algo desconocido", "Nada"), CategoryEnum.OTROS)
 
     def test_parse_full(self):
@@ -35,5 +40,6 @@ class TestDealParser(unittest.TestCase):
         self.assertEqual(result["price_sale"], Decimal("200"))
         self.assertEqual(result["category"], CategoryEnum.TECNOLOGIA)
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     unittest.main()

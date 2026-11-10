@@ -10,11 +10,13 @@ from src.domain.ingestion.models import IngestionEvent, IngestionSourceType
 
 logger = logging.getLogger(__name__)
 
+
 class ReplayFileStrategy(IngestionStrategy):
     """
     Ingestion Strategy that replays events from a JSONL file.
     Simulates latency based on the timestamp difference between events.
     """
+
     def __init__(self, file_path: str, speed_factor: float = 1.0):
         self.file_path = file_path
         self.speed_factor = speed_factor
@@ -22,7 +24,7 @@ class ReplayFileStrategy(IngestionStrategy):
 
     async def stream(self) -> AsyncIterator[IngestionEvent]:
         logging.info(f"Starting Replay Mode from: {self.file_path} (Speed: {self.speed_factor}x)")
-        
+
         if not os.path.exists(self.file_path):
             logger.error(f"Replay file not found: {self.file_path}")
             return
@@ -30,18 +32,18 @@ class ReplayFileStrategy(IngestionStrategy):
         last_event_time = None
 
         try:
-            with open(self.file_path, 'r', encoding='utf-8') as f:
+            with open(self.file_path, "r", encoding="utf-8") as f:
                 for line in f:
                     if not self._running:
                         break
-                    
+
                     try:
                         data = json.loads(line)
                         event = IngestionEvent(
-                            content=data['content'],
+                            content=data["content"],
                             source_type=IngestionSourceType.REPLAY,
-                            occurred_at=datetime.fromisoformat(data['occurred_at']),
-                            source_metadata=data.get('source_metadata', {})
+                            occurred_at=datetime.fromisoformat(data["occurred_at"]),
+                            source_metadata=data.get("source_metadata", {}),
                         )
                     except (json.JSONDecodeError, KeyError, ValueError) as e:
                         logger.warning(f"Skipping invalid replay line: {e}")
@@ -56,13 +58,13 @@ class ReplayFileStrategy(IngestionStrategy):
                             # For now we allow it as requested for "realistic stress test"
                             logger.debug(f"Replay sleeping for {sleep_time:.2f}s")
                             await asyncio.sleep(sleep_time)
-                    
+
                     last_event_time = event.occurred_at
                     yield event
-                    
+
         except Exception as e:
             logger.error(f"Error during replay: {e}")
-        
+
         logger.info("Replay finished.")
 
     async def stop(self):

@@ -1,64 +1,71 @@
+import logging
+
 from telethon import events
+
 from src.infrastructure.telegram.client import TelegramService
 from src.services.search import SearchService
 
-class BotService:
-    def __init__(self, telegram_service: TelegramService):
-        self.telegram = telegram_service
-        self.search_service = SearchService()
+logger = logging.getLogger(__name__)
 
-    def _format_deal(self, deal) -> str:
+HELP = (
+    "¡Hola! Soy CazaChollos Bot 🤖.\n"
+    "Escribe `/buscar <producto>` o simplemente envíame el nombre de lo que buscas.\n"
+    "Ejemplo: `auriculares sony`"
+)
+
+
+def _md(text: str) -> str:
+    """Telegram markdown: brackets and asterisks in a title would break the link or the bold."""
+    return text.replace("[", "(").replace("]", ")").replace("*", "").replace("_", " ").replace("`", "'")
+
+
+def format_deal(deal) -> str:
+    if deal.price_sale is None:
+        price = "Precio no indicado"
+    else:
         price = f"{deal.price_sale}€"
         original_price = deal.price_before or deal.price_retail
-        
         if original_price and original_price > deal.price_sale:
             discount = round((1 - (deal.price_sale / original_price)) * 100)
             price += f" (Antes: {original_price}€ | -{discount}%)"
-        
-        shop_info = f" | 🛒 {deal.shop}" if deal.shop else ""
-            
-        return f"🔥 **[{deal.title}]({deal.url})**\n💰 {price}{shop_info}\n📊 Score: {deal.chollo_score}/100\n"
+    shop_info = f" | 🛒 {_md(deal.shop)}" if deal.shop else ""
+    title = f"[{_md(deal.title)}]({deal.url})" if deal.url else _md(deal.title)
+    return f"🔥 **{title}**\n💰 {price}{shop_info}\n📊 Score: {deal.chollo_score}/100\n"
 
-    async def start(self):
-        # /start command
-        @self.telegram.client.on(events.NewMessage(pattern='/start'))
+
+class BotService:
+    def __init__(self, telegram_service: TelegramService, search_service: SearchService | None = None):
+        self.telegram = telegram_service
+        self.search_service = search_service or SearchService()
+
+    def register_handlers(self) -> None:
+        # Only private chats and incoming messages: in a group it would answer everyone, and it must never
+        # react to its own replies.
+        private = {"incoming": True, "func": lambda e: e.is_private}
+
+        @self.telegram.client.on(events.NewMessage(pattern=r"^/(start|help|ayuda)\b", **private))
         async def start_handler(event):
-            await event.respond(
-                "¡Hola! Soy CazaChollos Bot 🤖.\n"
-                "Escribe `/buscar <producto>` o simplemente envíame el nombre de lo que buscas.\n"
-                "Ejemplo: `auriculares sony`"
-            )
+            await event.respond(HELP)
 
-        # /buscar command or plain text
-        @self.telegram.client.on(events.NewMessage())
+        @self.telegram.client.on(events.NewMessage(**private))
         async def message_handler(event):
-            # Ignore commands handled by other patterns if any (simplistic check)
-            text = event.message.text
-            if not text or text.startswith('/start'):
+            text = (event.message.text or "").strip()
+            if not text or text.startswith(("/start", "/help", "/ayuda")):
                 return
-
-            query = text.replace('/buscar', '').strip()
+            query = text.removeprefix("/buscar").strip()
             if not query:
                 await event.respond("Por favor, dime qué quieres buscar.")
                 return
-
-            await event.respond(f"🔍 Buscando '{query}'...")
-            
+            await event.respond(f"🔍 Buscando '{query[:100]}'...")
             try:
                 results = await self.search_service.search_deals(query)
-                if not results:
-                    await event.respond("No he encontrado chollos recientes para esa búsqueda. 🥺")
-                    return
-
-                response_text = f"He encontrado {len(results)} ofertas para '{query}':\n\n"
-                for deal in results:
-                    response_text += self._format_deal(deal) + "\n"
-                
-                await event.respond(response_text, link_preview=False)
-            except Exception as e:
-                print(f"Error searching: {e}")
+            except Exception:
+                logger.exception("Search failed")
                 await event.respond("Ups, ha ocurrido un error al buscar. Inténtalo más tarde.")
-
-        await self.telegram.start()
-        print("Bot Service Started...")
-        await self.telegram.run_until_disconnected()
+                return
+            if not results:
+                await event.respond("No he encontrado chollos recientes para esa búsqueda. 🥺")
+                return
+            response = f"He encontrado {len(results)} ofertas para '{query[:100]}':\n\n"
+            response += "\n".join(format_deal(d) for d in results)
+            await event.respond(response, link_preview=False)

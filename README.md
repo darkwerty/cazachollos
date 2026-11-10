@@ -1,143 +1,100 @@
-# 🦅 CazaChollos: Intelligent Deal Ingestion Platform
+# CazaChollos
 
-![Architecture Ready](https://img.shields.io/badge/Status-Architecture_Ready-success?style=flat-square)
-![Python](https://img.shields.io/badge/Python-3.11+-blue.svg?style=flat-square&logo=python&logoColor=white)
-![Docker](https://img.shields.io/badge/Docker-Microservices-2496ED.svg?style=flat-square&logo=docker&logoColor=white)
-![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Async_SQLAlchemy-336791.svg?style=flat-square&logo=postgresql&logoColor=white)
-![Streamlit](https://img.shields.io/badge/Streamlit-Real_Time_Dashboard-FF4B4B.svg?style=flat-square&logo=streamlit&logoColor=white)
+Los grupos de ofertas de Telegram son un río de mensajes repetidos y sin estructura. CazaChollos los escucha,
+saca de cada mensaje el producto, el precio, la tienda y el enlace limpio, descarta los repetidos y lo guarda en
+PostgreSQL para poder buscar «auriculares sony» y ver esas ofertas, sin duplicados y con las mejores arriba.
 
-## 📖 Project Vision
+## Cómo funciona
 
-**CazaChollos** is a scalable, event-driven architecture designed to monitor high-frequency data streams from Telegram private groups. It ingests, normalizes, and scores e-commerce deals in real-time, exposing actionable data via a Chat Bot and an Administrative Dashboard.
-
-Unlike simple scrapers, this system implements **Zero-Duplication logic**, **Semantic Categorization**, and **Strict Type Safety**.
-
-## 🏗️ System Architecture
-
-The project follows a **Microservices** approach orchestrated via Docker Compose, ensuring Separation of Concerns:
-
-```mermaid
-graph TD
-    A[Telegram Stream] -->|Event| B(Service: Ingestor)
-    B -->|Async Write| C[(PostgreSQL 16)]
-    C -->|Read-Only| D(Service: Bot)
-    C -->|Analytics| E(Service: Dashboard)
-    
-    subgraph Core Logic
-    B -- Deduplication MD5 --> B
-    B -- Chollo Score Algo --> B
-    end
+```
+Grupos de Telegram ──► ingestor ──► PostgreSQL ◄── bot de Telegram (/buscar)
+ (o un JSONL)          parser          (FTS)    ◄── panel en Streamlit (:8501)
 ```
 
-### Core Services
-*   **Ingestor (The Listener):** Maintains persistent sessions (`.session` volume), handles parsing via price-parser, and sanitizes URLs to remove tracking parameters.
-*   **Database (The Brain):** PostgreSQL 16 optimized with TSVECTOR for Full-Text Search and JSONB support.
-*   **Dashboard (The View):** Streamlit app (Port 8501) for real-time KPI monitoring and data exploration.
-*   **Bot (The Interface):** Telegram bot offering natural language search capabilities using plainto_tsquery.
+1. **Ingesta.** Un cliente de Telegram (Telethon) escucha los grupos elegidos. Para probarlo sin Telegram, el
+   mismo servicio puede reproducir un fichero JSONL de mensajes con sus tiempos (modo `REPLAY`).
+2. **Extracción.** Reglas fijas sacan el enlace (quitando `utm_*`, `tag`, `ref` y acortando Amazon a `/dp/ID`),
+   el precio y el precio anterior, la tienda, la categoría y un título limpio. Si hay clave de Gemini, un LLM
+   extrae lo mismo en **salida estructurada** validada con Pydantic; si falla, se sale de rango o no está seguro
+   del título, mandan las reglas.
+3. **Deduplicación.** Hash del enlace limpio, el precio y el principio del título: la misma oferta publicada en
+   dos canales se guarda una vez.
+4. **Puntuación.** De 0 a 100 con una fórmula propia: el descuento y palabras como «mínimo histórico» o «error
+   de precio» suben; «reacondicionado» o «usado» bajan. Un mensaje sin precio no cuenta como gratis.
+5. **Búsqueda.** Búsqueda de texto completo de PostgreSQL en español (`websearch_to_tsquery`), ordenada por
+   relevancia y puntuación, desde el bot y desde el panel.
 
-## 🧠 Key Technical Features
+Además se guarda cada mensaje original (`raw_messages`) para auditar lo que hace el parser.
 
-1.  **Smart Deduplication Strategy**
-    To prevent spam and redundant processing, the system generates a unique Content Hash (MD5) based on:
-    `MD5(clean_url + price + normalized_title)`
-    If the hash exists in the DB unique index, the payload is discarded or updated, ensuring strict data integrity.
+## Probarlo en 2 minutos (sin Telegram)
 
-2.  **"Chollo Score" Algorithm**
-    A custom business logic algorithm (0-100 scale) to rank deal quality:
-    $$Score = (Discount_{\%} \times 0.7) + Bonus - Decay$$
-    *   **Bonus:** Tier-1 retailers (Amazon, etc.) and explicit "Previous Price" detection.
-    *   **Decay:** Time-based score reduction to prioritize fresh deals.
+Necesitas Docker.
 
-3.  **High-Performance Search**
-    Leverages PostgreSQL's native Full-Text Search (FTS). The system converts natural language queries (e.g., "Auriculares Sony baratos") into optimized SQL vectors for instant retrieval.
-
-## 📂 Project Structure (Clean Architecture)
-
-The codebase is organized to support maintainability and scalability:
-
-```text
-/
-├── app.py                # Streamlit Dashboard Entrypoint
-├── docker-compose.yml    # Orchestration (db, ingestor, bot, dashboard)
-├── pyproject.toml        # Dependency Management (Poetry)
-├── .env.example          # Configuration template
-├── /session              # Telegram session storage
-├── /migrations           # Alembic versions
-├── /src
-│   ├── /domain           # Pure Pydantic models & Schemas
-│   ├── /infrastructure   # DB Session managers & External APIs
-│   ├── /services         # Business Logic (Parser, Scoring, Search)
-│   └── /web              # Dashboard Logic
-└── /cmd                  # Docker execution scripts
+```bash
+git clone https://github.com/darkwerty/cazachollos.git
+cd cazachollos
+cp .env.example .env
+docker compose up -d --build
 ```
 
-## 🚀 Getting Started
+Abre http://localhost:8501. El ingestor aplica las migraciones, reproduce `replay_data.jsonl` (12 mensajes
+**inventados** que imitan los de un canal de ofertas, con un repetido, uno sin precio y uno que no es una
+oferta) y termina. En el panel puedes buscar, por ejemplo, `auriculares` o `"freidora de aire"`.
 
-### Prerequisites
-*   Docker & Docker Compose
-*   Python 3.11+ (for local scripts)
-*   Telegram API Credentials (from [my.telegram.org](https://my.telegram.org))
+## Con Telegram de verdad
 
-### Installation & Configuration
+1. Saca `TELEGRAM_API_ID` y `TELEGRAM_API_HASH` en https://my.telegram.org y ponlos en `.env`.
+2. Pon `INGESTION_MODE=LIVE` y, en `TELEGRAM_ALLOWED_GROUPS`, los grupos que quieres escuchar (id o nombre).
+3. La primera vez hay que iniciar sesión con tu número y el código que te manda Telegram:
 
-1.  **Clone the repository:**
-    ```bash
-    git clone https://github.com/darkwerty/cazachollos.git
-    cd cazachollos
-    ```
+   ```bash
+   docker compose run --rm ingestor
+   ```
 
-2.  **Environment Setup:**
-    ```bash
-    cp .env.example .env
-    ```
-    Edit `.env` and fill in your details:
-    *   `TELEGRAM_API_ID` & `TELEGRAM_API_HASH`: Get these from my.telegram.org.
-    *   `TELEGRAM_ALLOWED_GROUPS`: Comma-separated list of Group/Channel IDs (integers, often starting with `-100`) or Usernames that you want to monitor.
-        *   *Tip:* You can find a group's ID by forwarding a message from it to bots like `@userinfobot`.
+   La sesión se guarda en el volumen `telegram_session` y después ya no lo vuelve a pedir:
+   `docker compose up -d`.
+4. Para el bot, crea uno con @BotFather, pon `BOT_TOKEN` en `.env` y arráncalo con
+   `docker compose --profile bot up -d`. Responde en privado a `/buscar <producto>` o a cualquier texto.
 
-3.  **Generate Telegram Session:**
-    Since the Ingestor runs in Docker (often headless), you must generate the `.session` file locally first to handle the interactive login (phone number & code).
+El fichero de sesión equivale a tu cuenta de Telegram: no lo compartas. Git y Docker lo ignoran.
 
-    a. **Install dependencies:**
-    ```bash
-    pip install poetry
-    poetry install
-    ```
+## LLM
 
-    b. **Run the Ingestor script locally:**
-    ```bash
-    poetry run python cmd/run_ingestor.py
-    ```
+Opcional. Con `GEMINI_API_KEY` se usa `GEMINI_MODEL` (por defecto `gemini-3.5-flash-lite`, un modelo barato pensado
+para extraer datos en volumen). El mensaje va marcado como dato y no como instrucción, y la respuesta tiene que
+cumplir el esquema de `DealExtraction` (`src/services/llm_services.py`): si no, se descarta entera.
 
-    c. **Follow the instructions:**
-    *   Enter your phone number when prompted.
-    *   Enter the verification code sent to your Telegram app.
-    *   Once you see `Telegram Client Connected` or `Ingestor Service Started`, you can stop the script (Ctrl+C).
+## Desarrollo
 
-    The `cazachollos_ingestor.session` file will be created in the `session/` directory.
+```bash
+poetry install
+poetry run pytest -q
+poetry run ruff check . && poetry run ruff format --check .
+```
 
-### Launch the Stack
+Los tests no necesitan base de datos, Telegram ni Gemini (el LLM se sustituye por dobles). GitHub Actions pasa
+lint y tests en cada push.
 
-1.  **Build and Run:**
-    ```bash
-    docker-compose up -d --build
-    ```
+Para ejecutar fuera de Docker: `poetry run alembic upgrade head`, `poetry run python cmd/run_ingestor.py` y
+`poetry run streamlit run app.py`, con PostgreSQL en `POSTGRES_HOST`.
 
-2.  **Apply Migrations (Critical):**
-    Initialize the database schema using Alembic:
-    ```bash
-    docker exec cazachollos_ingestor alembic upgrade head
-    ```
+## Estructura
 
-3.  **Access the Dashboard:**
-    Visit [http://localhost:8501](http://localhost:8501) to view the live data feed, ingestion stats, and score distribution.
+```
+cmd/               puntos de entrada: ingestor y bot
+src/domain/        modelos SQLAlchemy, esquemas Pydantic y la interfaz de las fuentes de mensajes
+src/infrastructure/ base de datos, cliente de Telegram y fuentes LIVE y REPLAY
+src/services/      parser, LLM, ingestor, búsqueda y bot
+src/web/           consultas del panel
+app.py             panel de Streamlit
+migrations/        Alembic
+scripts/           exportar mensajes guardados a JSONL (replay_privado.jsonl, fuera de git) y demo del replay
+docs/              especificación inicial del MVP
+```
 
-## 🛠️ Troubleshooting
+## Límites
 
-**Issue: relation "deals" does not exist**
-*   **Cause:** The database container is running but the tables haven't been created yet.
-*   **Fix:** Ensure you ran the migration command in step 2 (`alembic upgrade head`).
-
-**Issue: AuthKeyUnregisteredError**
-*   **Cause:** The session file is invalid or was revoked/deleted.
-*   **Fix:** Delete the file in `session/` and regenerate it using the "Generate Telegram Session" steps above.
+- La extracción por reglas está pensada para mensajes en español con el formato habitual de los canales de
+  ofertas; con formatos raros el título o el precio pueden salir mal (para eso está el LLM).
+- La puntuación es orientativa: con descuentos grandes y varias palabras clave se satura en 100.
+- Escuchar grupos con una cuenta de usuario tiene que respetar las condiciones de Telegram y de cada grupo.

@@ -35,3 +35,7 @@ session/
 postgres_data/
 *.session
 *.session-journal
+
+# Exportaciones de mensajes reales (scripts/export_history_to_replay.py): no se suben
+replay_privado.jsonl
+.ruff_cache/

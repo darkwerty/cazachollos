@@ -3,12 +3,13 @@ from datetime import datetime
 from typing import Optional
 from decimal import Decimal
 
-from sqlalchemy import String, Text, Numeric, Integer, DateTime, Boolean, Index, Computed, BigInteger
+from sqlalchemy import String, Text, Numeric, Integer, DateTime, Index, Computed, BigInteger
 from sqlalchemy.dialects.postgresql import UUID, TSVECTOR
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.infrastructure.db.session import Base
 from src.domain.enums import CategoryEnum
+
 
 class Deal(Base):
     __tablename__ = "deals"
@@ -17,7 +18,8 @@ class Deal(Base):
     content_hash: Mapped[str] = mapped_column(String(32), unique=True, index=True)
     title: Mapped[str] = mapped_column(String(255))
     description: Mapped[str] = mapped_column(Text)
-    price_sale: Mapped[Decimal] = mapped_column(Numeric(10, 2))
+    # None when the message has no price (0 is a real freebie)
+    price_sale: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 2), nullable=True)
     price_retail: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 2), nullable=True)
     currency: Mapped[str] = mapped_column(String(3), default="EUR")
     category: Mapped[CategoryEnum] = mapped_column(String, default=CategoryEnum.OTROS)
@@ -29,19 +31,17 @@ class Deal(Base):
 
     url: Mapped[str] = mapped_column(Text)
     chollo_score: Mapped[int] = mapped_column(Integer, default=0)
-    
+
     # Full Text Search Vector
     # We use 'spanish' config for stemming
     search_vector: Mapped[str] = mapped_column(
-        TSVECTOR,
-        Computed("to_tsvector('spanish', title || ' ' || coalesce(description, ''))", persisted=True)
+        TSVECTOR, Computed("to_tsvector('spanish', title || ' ' || coalesce(description, ''))", persisted=True)
     )
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
-    __table_args__ = (
-        Index('ix_deals_search_vector', 'search_vector', postgresql_using='gin'),
-    )
+    __table_args__ = (Index("ix_deals_search_vector", "search_vector", postgresql_using="gin"),)
+
 
 class RawMessage(Base):
     __tablename__ = "raw_messages"
