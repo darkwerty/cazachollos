@@ -1,9 +1,18 @@
+import os
+
 import altair as alt
 import streamlit as st
 
+from src.web.access import allowed_emails, can_enter
 from src.web.db_sync import get_deals_today, get_recent_deals, get_total_deals, search_deals
 
 st.set_page_config(page_title="CazaChollos", page_icon="🛍️", layout="wide")
+
+# En Azure el login (Google) lo hace Container Apps; aquí solo se mira si ese correo puede entrar
+if not can_enter(st.context.headers, allowed_emails(os.getenv("ALLOWED_EMAILS", ""))):
+    st.error("Esta cuenta no tiene acceso al panel.")
+    st.markdown("[Entrar con otra cuenta](/.auth/logout?post_logout_redirect_uri=/)")
+    st.stop()
 st.title("🛍️ CazaChollos")
 
 COLUMN_CONFIG = {

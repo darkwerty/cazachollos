@@ -176,3 +176,23 @@ def test_provider_choice(monkeypatch):
     monkeypatch.setenv("LLM_PROVIDER", "azure")
     monkeypatch.delenv("AZURE_OPENAI_ENDPOINT", raising=False)
     assert not make_llm_provider().enabled
+
+
+# ---------- dashboard access ----------
+def principal(email: str) -> str:
+    data = {
+        "auth_typ": "google",
+        "claims": [{"typ": "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress", "val": email}],
+    }
+    return base64.b64encode(json.dumps(data).encode()).decode()
+
+
+def test_dashboard_access():
+    from src.web.access import allowed_emails, can_enter
+
+    allowed = allowed_emails("Dani.Algar02@gmail.com, otra@example.com")
+    assert can_enter({"X-Ms-Client-Principal": principal("dani.algar02@gmail.com")}, allowed)
+    assert not can_enter({"X-Ms-Client-Principal": principal("intruso@gmail.com")}, allowed)
+    assert not can_enter({}, allowed)
+    assert can_enter({"X-Ms-Client-Principal-Name": "otra@example.com"}, allowed)
+    assert can_enter({}, set())  # local, sin lista

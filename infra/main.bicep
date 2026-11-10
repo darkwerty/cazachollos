@@ -7,7 +7,8 @@
 //     Cognitive Services OpenAI User sobre su cuenta de Foundry (roles.bicep): sin claves y sin costes fijos nuevos
 //   - Azure Database for PostgreSQL Flexible Server B1ms (750 h gratis al mes los 12 primeros meses de la cuenta)
 //   - Container Apps Job programado: una pasada por los canales y termina (no se queda encendido)
-//   - Container App del panel (Streamlit), que escala a cero, con el login integrado de Container Apps
+//   - Container App del panel (Streamlit), que escala a cero, con el login integrado de Container Apps (Google)
+//     y una lista de correos que pueden entrar (ALLOWED_EMAILS)
 //   - Presupuesto mensual con alertas por correo
 //
 // Uso (ver README): az acr build ... y después
@@ -43,19 +44,19 @@ param llmMaxCallsPerDay int = 400
 param pgPassword string
 param pgUser string = 'cazachollos'
 
-@description('Login del panel (registro de aplicación de Entra ID). Vacío en el primer despliegue: el panel no se publica sin login')
-param authClientId string = ''
+@description('Login del panel con Google (cliente OAuth web). Vacío: el panel no se publica en Internet')
+param googleClientId string = ''
 @secure()
-param authClientSecret string = ''
-@description('Object id de las personas que pueden entrar en el panel')
-param authAllowedObjectIds array = []
+param googleClientSecret string = ''
+@description('Correos que pueden entrar en el panel, separados por comas (Google deja entrar a cualquier cuenta)')
+param allowedEmails string
 
 param budgetAmount int = 5
 param budgetStartDate string = utcNow('yyyy-MM-01')
 param budgetEmails array
 
 var suffix = uniqueString(resourceGroup().id)
-var withAuth = !empty(authClientId)
+var withAuth = !empty(googleClientId)
 
 resource logs 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
   name: '${prefix}-logs-${suffix}'
@@ -196,7 +197,7 @@ resource dashboard 'Microsoft.App/containerApps@2024-03-01' = {
       registries: registries
       secrets: concat(
         [{ name: 'pg-password', value: pgPassword }],
-        withAuth ? [{ name: 'auth-secret', value: authClientSecret }] : []
+        withAuth ? [{ name: 'google-secret', value: googleClientSecret }] : []
       )
     }
     template: {
@@ -206,7 +207,7 @@ resource dashboard 'Microsoft.App/containerApps@2024-03-01' = {
           image: image
           command: ['streamlit', 'run', 'app.py', '--server.port', '8501', '--server.address', '0.0.0.0']
           resources: { cpu: json('0.25'), memory: '0.5Gi' }
-          env: dbEnv
+          env: concat(dbEnv, [{ name: 'ALLOWED_EMAILS', value: allowedEmails }])
         }
       ]
       scale: { minReplicas: 0, maxReplicas: 1 }
@@ -219,19 +220,12 @@ resource auth 'Microsoft.App/containerApps/authConfigs@2024-03-01' = if (withAut
   name: 'current'
   properties: {
     platform: { enabled: true }
-    globalValidation: { unauthenticatedClientAction: 'RedirectToLoginPage', redirectToProvider: 'azureactivedirectory' }
+    globalValidation: { unauthenticatedClientAction: 'RedirectToLoginPage', redirectToProvider: 'google' }
     identityProviders: {
-      azureActiveDirectory: {
+      google: {
         enabled: true
-        registration: {
-          clientId: authClientId
-          clientSecretSettingName: 'auth-secret'
-          openIdIssuer: '${environment().authentication.loginEndpoint}${tenant().tenantId}/v2.0'
-        }
-        validation: {
-          allowedAudiences: ['api://${authClientId}', authClientId]
-          defaultAuthorizationPolicy: { allowedPrincipals: { identities: authAllowedObjectIds } }
-        }
+        registration: { clientId: googleClientId, clientSecretSettingName: 'google-secret' }
+        login: { scopes: ['openid', 'email', 'profile'] }
       }
     }
   }

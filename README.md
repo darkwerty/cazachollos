@@ -67,8 +67,8 @@ Así funciona ahora mismo con 11 canales públicos de ofertas (`infra/main.bicep
   24:00 (hora de Madrid) la pasada acaba sin hacer nada. Cada canal sigue desde el último mensaje guardado, así
   que lo publicado de noche se recoge a las 7:00. No hay ninguna cuenta de Telegram en juego.
 - **PostgreSQL Flexible Server** B1ms con TLS obligatorio y acceso solo desde servicios de Azure.
-- El **panel** es una Container App que escala a cero, detrás del login integrado de Container Apps (Entra ID)
-  y abierto solo a las cuentas indicadas.
+- El **panel** es una Container App que escala a cero, detrás del login integrado de Container Apps con
+  Google, y además solo deja pasar los correos de `ALLOWED_EMAILS`.
 - La IA es **Azure OpenAI** (`gpt-4.1-nano`) con identidad administrada, sin claves. Solo se le pregunta cuando
   las reglas dudan (sin precio, sin categoría o con un título raro), los repetidos se descartan antes de llamarla
   y hay un tope diario de llamadas (`LLM_MAX_CALLS_PER_DAY`).
@@ -81,9 +81,9 @@ az acr build -r <acr> -t cazachollos:<sha> .
 IMAGE=<acr>.azurecr.io/cazachollos:<sha> PG_PASSWORD=<contraseña>   az deployment group create -g rg-cazachollos -f infra/main.bicep -p infra/main.bicepparam
 ```
 
-El primer despliegue deja el panel sin publicar. Con un registro de aplicación de Entra ID (redirección
-`https://<panel>/.auth/login/aad/callback`), se vuelve a desplegar con `AUTH_CLIENT_ID`, `AUTH_CLIENT_SECRET` y
-`AUTH_ALLOWED_OBJECT_ID`, y el panel queda publicado con login.
+Sin `GOOGLE_CLIENT_ID` el panel no se publica. Con un cliente OAuth web de Google (redirección
+`https://<panel>/.auth/login/google/callback`) se vuelve a desplegar con `GOOGLE_CLIENT_ID` y
+`GOOGLE_CLIENT_SECRET`, y el panel queda publicado con login.
 
 Todo son contenedores, Postgres estándar y variables de entorno: para otra nube basta con otro programador de
 tareas (CronJob de Kubernetes, Cloud Run Jobs...) y otro Postgres. El proveedor de IA se cambia con `LLM_PROVIDER`.
