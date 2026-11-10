@@ -50,6 +50,16 @@ param googleClientId string = ''
 param googleClientSecret string = ''
 @description('Correos que pueden entrar en el panel, separados por comas (Google deja entrar a cualquier cuenta)')
 param allowedEmails string
+@description('Correos que pueden ver la web de ofertas ("*": cualquier cuenta de Google)')
+param webAllowedEmails string = allowedEmails
+
+@description('Bot de Telegram (@BotFather) y secreto del webhook. Vacíos: sin bot ni avisos')
+@secure()
+param botToken string = ''
+@secure()
+param webhookSecret string = ''
+@description('Ids de Telegram que pueden usar el bot. Vacío: cualquiera')
+param telegramAllowedUsers string = ''
 
 param budgetAmount int = 5
 param budgetStartDate string = utcNow('yyyy-MM-01')
@@ -57,6 +67,9 @@ param budgetEmails array
 
 var suffix = uniqueString(resourceGroup().id)
 var withAuth = !empty(googleClientId)
+var withBot = !empty(botToken)
+var botSecrets = withBot ? [{ name: 'bot-token', value: botToken }, { name: 'webhook-secret', value: webhookSecret }] : []
+var botEnv = withBot ? [{ name: 'BOT_TOKEN', secretRef: 'bot-token' }] : []
 
 resource logs 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
   name: '${prefix}-logs-${suffix}'
@@ -157,7 +170,7 @@ resource job 'Microsoft.App/jobs@2024-03-01' = {
       replicaTimeout: 600
       replicaRetryLimit: 0
       registries: registries
-      secrets: [{ name: 'pg-password', value: pgPassword }]
+      secrets: concat([{ name: 'pg-password', value: pgPassword }], botSecrets)
     }
     template: {
       containers: [
@@ -175,7 +188,7 @@ resource job 'Microsoft.App/jobs@2024-03-01' = {
             { name: 'AZURE_OPENAI_DEPLOYMENT', value: openAiDeployment }
             { name: 'AZURE_CLIENT_ID', value: identity.properties.clientId }
             { name: 'LLM_MAX_CALLS_PER_DAY', value: string(llmMaxCallsPerDay) }
-          ])
+          ], botEnv)
         }
       ]
     }
@@ -231,6 +244,67 @@ resource auth 'Microsoft.App/containerApps/authConfigs@2024-03-01' = if (withAut
   }
 }
 
+// Web de ofertas (FastAPI): las fichas con imagen, filtros y orden, y el webhook del bot de Telegram
+resource web 'Microsoft.App/containerApps@2024-03-01' = {
+  name: '${prefix}-web'
+  location: location
+  identity: {
+    type: 'UserAssigned'
+    userAssignedIdentities: { '${identity.id}': {} }
+  }
+  properties: {
+    environmentId: env.id
+    configuration: {
+      ingress: { external: withAuth, targetPort: 8000, transport: 'auto', allowInsecure: false }
+      registries: registries
+      secrets: concat(
+        [{ name: 'pg-password', value: pgPassword }],
+        withAuth ? [{ name: 'google-secret', value: googleClientSecret }] : [],
+        botSecrets
+      )
+    }
+    template: {
+      containers: [
+        {
+          name: 'web'
+          image: image
+          command: ['uvicorn', 'src.web.site:app', '--host', '0.0.0.0', '--port', '8000', '--proxy-headers']
+          resources: { cpu: json('0.25'), memory: '0.5Gi' }
+          env: concat(dbEnv, [
+            { name: 'ALLOWED_EMAILS', value: webAllowedEmails }
+            { name: 'TELEGRAM_ALLOWED_USERS', value: telegramAllowedUsers }
+          ], botEnv, withBot ? [{ name: 'TELEGRAM_WEBHOOK_SECRET', secretRef: 'webhook-secret' }] : [])
+          probes: [
+            { type: 'Readiness', httpGet: { path: '/health', port: 8000 }, initialDelaySeconds: 2, periodSeconds: 10 }
+          ]
+        }
+      ]
+      scale: { minReplicas: 0, maxReplicas: 1 }
+    }
+  }
+}
+
+resource webAuth 'Microsoft.App/containerApps/authConfigs@2024-03-01' = if (withAuth) {
+  parent: web
+  name: 'current'
+  properties: {
+    platform: { enabled: true }
+    globalValidation: {
+      unauthenticatedClientAction: 'RedirectToLoginPage'
+      redirectToProvider: 'google'
+      // Telegram llama al webhook sin login (lo protege la cabecera secreta) y la sonda de salud tampoco lo tiene
+      excludedPaths: ['/telegram/webhook', '/health']
+    }
+    identityProviders: {
+      google: {
+        enabled: true
+        registration: { clientId: googleClientId, clientSecretSettingName: 'google-secret' }
+        login: { scopes: ['openid', 'email', 'profile'] }
+      }
+    }
+  }
+}
+
 resource budget 'Microsoft.Consumption/budgets@2023-11-01' = {
   name: '${prefix}-budget'
   properties: {
@@ -249,4 +323,5 @@ resource budget 'Microsoft.Consumption/budgets@2023-11-01' = {
 output dashboardUrl string = withAuth ? 'https://${dashboard.properties.configuration.ingress.fqdn}' : ''
 output dashboardFqdnWhenPublic string = '${dashboard.name}.${env.properties.defaultDomain}'
 output jobName string = job.name
+output webUrl string = 'https://${web.name}.${env.properties.defaultDomain}'
 output postgresHost string = pg.properties.fullyQualifiedDomainName

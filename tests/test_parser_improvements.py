@@ -39,23 +39,24 @@ class TestParserImprovements(unittest.TestCase):
     def test_calculate_score_discount(self):
         # 50% discount
         score = self.parser.calculate_score(Decimal(50), Decimal(100), "text")
-        # Base 50 + 50 (discount) = 100
-        self.assertEqual(score, 100)
+        # 20 + 0.9 x 50 = 65: the discount is what matters, without saturating at 100
+        self.assertEqual(score, 65)
 
         # 20% discount
         score = self.parser.calculate_score(Decimal(80), Decimal(100), "text")
-        # Base 50 + 20 = 70
-        self.assertEqual(score, 70)
+        # 20 + 0.9 x 20 = 38
+        self.assertEqual(score, 38)
 
     def test_calculate_score_keywords(self):
         # No discount info, but "Error de precio"
         score = self.parser.calculate_score(Decimal(100), None, "Esto es un Error de precio brutal")
-        # Base 50 + 30 (Error de precio) + 5 (brutal) = 85
-        self.assertEqual(score, 85)
+        # Without discount 35, + 15 for "error de precio"
+        self.assertEqual(score, 50)
 
     def test_calculate_score_free(self):
+        # Free is good, but "free with a trial" is common: 60, not the top
         score = self.parser.calculate_score(Decimal(0), Decimal(10), "Gratis")
-        self.assertEqual(score, 100)
+        self.assertEqual(score, 60)
 
 
 if __name__ == "__main__":

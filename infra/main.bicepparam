@@ -11,6 +11,8 @@ param pgPassword = readEnvironmentVariable('PG_PASSWORD')
 param googleClientId = readEnvironmentVariable('GOOGLE_CLIENT_ID', '')
 param googleClientSecret = readEnvironmentVariable('GOOGLE_CLIENT_SECRET', '')
 param allowedEmails = 'dani.algar02@gmail.com'
+param botToken = readEnvironmentVariable('BOT_TOKEN', '')
+param webhookSecret = readEnvironmentVariable('TELEGRAM_WEBHOOK_SECRET', '')
 
 // Canales públicos (tienen vista web en t.me/s/<canal>). ninjachat es un grupo y linkscrewfinds no muestra
 // mensajes en la vista web: sin cuenta de Telegram no se pueden leer.

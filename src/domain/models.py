@@ -28,6 +28,9 @@ class Deal(Base):
     discount_percentage: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     source: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     raw_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # Picture of the post (or of its link preview) and link to the original message
+    image_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    post_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     url: Mapped[str] = mapped_column(Text)
     chollo_score: Mapped[int] = mapped_column(Integer, default=0)

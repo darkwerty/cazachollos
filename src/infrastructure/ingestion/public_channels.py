@@ -39,6 +39,7 @@ class ChannelPost:
     msg_id: int
     text: str
     date: datetime | None
+    image_url: str | None = None
 
 
 def channel_name(value: str) -> str | None:
@@ -76,6 +77,25 @@ def message_text(node) -> str:
     return node.get_text().strip()
 
 
+IMAGE_SELECTORS = (
+    "a.tgme_widget_message_photo_wrap",
+    ".link_preview_image",
+    ".link_preview_right_image",
+    "i.tgme_widget_message_video_thumb",
+)
+STYLE_URL = re.compile(r"background-image:\s*url\('([^']+)'\)")
+
+
+def post_image(node) -> str | None:
+    """The photo of the post, or the image of its link preview (the same picture the channel shows)."""
+    for selector in IMAGE_SELECTORS:
+        el = node.select_one(selector)
+        m = STYLE_URL.search(el.get("style", "")) if el is not None else None
+        if m and m.group(1).startswith("https://"):
+            return m.group(1)
+    return None
+
+
 def parse_page(html: str, channel: str) -> list[ChannelPost]:
     """Posts of one page of https://t.me/s/<channel>, oldest first. Posts without text (only media) are skipped."""
     soup = BeautifulSoup(html, "html.parser")
@@ -98,7 +118,7 @@ def parse_page(html: str, channel: str) -> list[ChannelPost]:
             except ValueError:
                 date = None
         chat_id = _view_chat_id(node.get("data-view")) or fallback_chat_id(channel)
-        posts.append(ChannelPost(channel, chat_id, int(num), text, date))
+        posts.append(ChannelPost(channel, chat_id, int(num), text, date, post_image(node)))
     return sorted(posts, key=lambda p: p.msg_id)
 
 
@@ -186,7 +206,13 @@ class PublicChannelsStrategy(IngestionStrategy):
                         content=p.text,
                         source_type=IngestionSourceType.WEB,
                         occurred_at=p.date or datetime.utcnow(),
-                        source_metadata={"chat_id": p.chat_id, "chat_title": p.channel, "msg_id": p.msg_id},
+                        source_metadata={
+                            "chat_id": p.chat_id,
+                            "chat_title": p.channel,
+                            "msg_id": p.msg_id,
+                            "image_url": p.image_url,
+                            "post_url": f"https://t.me/{p.channel}/{p.msg_id}",
+                        },
                     )
         finally:
             await self.stop()
