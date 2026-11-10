@@ -212,3 +212,8 @@ def test_dashboard_access():
     assert not can_enter({}, allowed)
     assert can_enter({"X-Ms-Client-Principal-Name": "otra@example.com"}, allowed)
     assert can_enter({}, set())  # local, sin lista
+
+
+def test_service_messages_are_skipped():
+    html = '<div class="tgme_widget_message service_message" data-post="canal/7"><div class="tgme_widget_message_text">Canal pinned «Oferta: 5€»</div></div>'
+    assert parse_page(html, "canal") == []

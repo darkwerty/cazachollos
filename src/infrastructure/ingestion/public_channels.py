@@ -101,6 +101,8 @@ def parse_page(html: str, channel: str) -> list[ChannelPost]:
     soup = BeautifulSoup(html, "html.parser")
     posts: list[ChannelPost] = []
     for node in soup.select("div.tgme_widget_message[data-post]"):
+        if "service_message" in (node.get("class") or []):
+            continue  # "channel pinned «...»", "channel photo updated": not posts
         _name, _, num = node["data-post"].rpartition("/")
         if not num.isdigit():
             continue

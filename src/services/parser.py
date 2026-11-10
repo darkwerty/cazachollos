@@ -1,4 +1,5 @@
 import re
+import unicodedata
 import logging
 from decimal import Decimal
 from typing import Optional, List
@@ -9,6 +10,33 @@ from src.domain.enums import CategoryEnum
 from src.services.llm_services import LLMProvider, make_llm_provider
 
 logger = logging.getLogger(__name__)
+
+
+# Lines that announce a promotion, not the product
+PROMO_LINE = re.compile(r"^(c[oó]digo|cup[oó]n|descuento|env[ií]o gratis|primer pedido)\b", re.IGNORECASE)
+# Titles that say nothing about the product: "CHOLLITO BRICO", "CUPÓN 50%", "I9"
+GENERIC_TITLE = re.compile(
+    r"^(chollit?o|chollazo|chollo|cholo|cup[oó]n|oferta|ofert[oó]n|descuento|top \d+)\b", re.IGNORECASE
+)
+TRAILING_WORDS = re.compile(r"(?:\s+(?:solo|sólo|desde|por|a|al|en|con|de|y))+\s*$", re.IGNORECASE)
+EMPTY_PARENS = re.compile(r"\(\s*[\w ]{0,12}:?\s*\)")
+
+
+def clean_title(title: str) -> str:
+    """Drops emojis, flags, invisible characters, empty "(PVP: )" and dangling words like "solo" or "desde"."""
+    out = "".join(ch for ch in title if unicodedata.category(ch)[0] in "LNPZ" or ch in "+&%$€'\"/")
+    out = EMPTY_PARENS.sub("", out)
+    out = re.sub(r"\s*(?:[—–-]{2,}>?|-->|—|–)\s*", " ", out)  # "NEW ERA —-> 5€"
+    out = re.sub(r"\s+", " ", out).strip(" -:|·,;")
+    for _ in range(3):
+        out = TRAILING_WORDS.sub("", out).strip(" -:|,;")
+    return out
+
+
+def is_generic_title(title: str) -> bool:
+    t = clean_title(title)
+    words = t.split()
+    return bool(GENERIC_TITLE.match(t)) or (len(words) <= 2 and (t.isupper() or len(t) < 8))
 
 
 class DealParser:
@@ -687,6 +715,10 @@ class DealParser:
             # 1. Position Score (Earlier is better)
             score += 10 - i * 2
 
+            # Promo lines are not the product ("Código 14% en tu primer pedido", "Cupón: ...")
+            if PROMO_LINE.match(candidate):
+                score -= 25
+
             # 2. Brand Detection (Huge Boost)
             line_lower = candidate.lower()
             for brand in self.brands:
@@ -739,13 +771,13 @@ class DealParser:
                 best_score = score
                 best_candidate = candidate
 
-        if best_candidate and len(best_candidate) > 3:
-            return best_candidate
+        if best_candidate and len(clean_title(best_candidate)) > 3:
+            return clean_title(best_candidate)
 
         # Fallback: Just return cleaned first line
         fallback = lines[0]
         fallback = re.sub(r"https?://\S+", "", fallback).strip()
-        return fallback[:100]
+        return clean_title(fallback)[:100] or fallback[:100]
 
     # Hashtags that some channels put on every post (#moda, #electronica...): the most reliable signal
     HASHTAG_CATEGORIES = {
@@ -856,6 +888,7 @@ class DealParser:
             result.get("price_sale") is None
             or result.get("category") in (CategoryEnum.OTROS, CategoryEnum.OTROS.value)
             or not 8 <= len(title) <= 120
+            or is_generic_title(title)
         )
 
     def parse(self, text: str, use_llm: bool = True) -> dict:
@@ -906,7 +939,7 @@ class DealParser:
 
         # Decide Title
         if llm_data.get("title") and llm_data.get("confidence", 0) > 0.7:
-            title = llm_data["title"]
+            title = clean_title(llm_data["title"]) or llm_data["title"]
         else:
             title = self.extract_title_heuristic(text, url)
 

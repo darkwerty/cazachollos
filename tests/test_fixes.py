@@ -170,3 +170,18 @@ def test_categories_from_title_hashtags_and_whole_words():
     assert p.parse("Cartuchos Schneider\n#oficina\nNuevo Precio: 0.98 €\nhttps://go.x")["category"] == "oficina"
     assert p.parse("Árbol rascador para Gatos\nOferta: 30€\nhttps://x.es")["category"] == "mascotas"
     assert p.parse("Juego Mafia Trilogy para PS4\nOferta: 19€\nhttps://x.es")["category"] == "videojuegos"
+
+
+def test_clean_titles():
+    from src.services.parser import clean_title, is_generic_title
+
+    assert clean_title("Ventilador de techo con luz LED solo  ❗️ 🉐 (PVP: )") == "Ventilador de techo con luz LED"
+    assert clean_title("10 juegos Pc Steam desde  ❗️💥") == "10 juegos Pc Steam"
+    assert clean_title("POCO X8 Pro 5G 12GB 512GB solo ❗️") == "POCO X8 Pro 5G 12GB 512GB"
+    assert is_generic_title("CHOLLITO BRICO❗️ 🉐  🇪🇸") and is_generic_title("I9❗️")
+    assert not is_generic_title("Auriculares Sony WH-1000XM5")
+
+
+def test_promo_line_is_not_the_title():
+    text = "Código 14% en tu primer pedido: PRIMERACOMPRA\nZapatillas Nike Air Max 90\nOferta: 60€\nhttps://x.es"
+    assert parser_without_llm().parse(text)["title"].startswith("Zapatillas Nike")
