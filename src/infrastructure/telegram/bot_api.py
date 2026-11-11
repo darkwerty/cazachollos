@@ -8,6 +8,10 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
+# httpx logs every request URL at INFO, and Bot API URLs carry the token: never below WARNING
+for _name in ("httpx", "httpcore"):
+    logging.getLogger(_name).setLevel(logging.WARNING)
+
 
 class BotAPI:
     def __init__(self, token: str, client: httpx.AsyncClient | None = None) -> None:

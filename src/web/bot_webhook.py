@@ -191,5 +191,7 @@ def __getattr__(name: str):
     # `uvicorn src.web.bot_webhook:app`: the real app is only built when it is asked for (tests import the module)
     if name == "app":
         logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO").upper())
+        for quiet in ("httpx", "httpcore"):  # their URLs can carry the bot token
+            logging.getLogger(quiet).setLevel(logging.WARNING)
         return create_app()
     raise AttributeError(name)

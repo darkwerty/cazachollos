@@ -198,5 +198,7 @@ def create_app(finder=find_deals, allowed_emails: str | None = None, with_bot: b
 def __getattr__(name: str):
     if name == "app":  # uvicorn src.web.site:app
         logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO").upper())
+        for quiet in ("httpx", "httpcore"):  # their URLs can carry the bot token
+            logging.getLogger(quiet).setLevel(logging.WARNING)
         return create_app()
     raise AttributeError(name)
