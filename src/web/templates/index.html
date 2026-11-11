@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>CazaChollos</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛍️</text></svg>">
+<style>
+  :root {
+    --bg: #f4f5f7; --surface: #ffffff; --surface-2: #f0f1f4; --text: #17191f; --soft: #5b6170; --faint: #8a90a0;
+    --line: #e1e4ea; --brand: #e8482c; --brand-ink: #ffffff; --good: #138a4b; --badge: #e8482c; --chip: #ffffff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #101217; --surface: #181b22; --surface-2: #20242d; --text: #eef0f4; --soft: #a7adbb; --faint: #7b8192;
+      --line: #2a2f3a; --brand: #ff6a4d; --brand-ink: #101217; --good: #3ccf86; --badge: #ff6a4d; --chip: #181b22;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); }
+  body { font: 15px/1.45 "Segoe UI", system-ui, -apple-system, Roboto, sans-serif; }
+  a { color: inherit; }
+  .wrap { max-width: 1280px; margin: 0 auto; padding: 0 16px; }
+
+  header.top { position: sticky; top: 0; z-index: 5; background: var(--surface); border-bottom: 1px solid var(--line); }
+  .top-row { display: flex; align-items: center; gap: 16px; padding: 12px 0; }
+  .logo { display: flex; align-items: center; gap: 8px; font-weight: 800; font-size: 1.25rem; text-decoration: none; white-space: nowrap; }
+  .logo span { color: var(--brand); }
+  .search { flex: 1; display: flex; }
+  .search input { width: 100%; padding: 10px 14px; border: 1.5px solid var(--line); border-radius: 999px; background: var(--surface-2); color: var(--text); font: inherit; }
+  .search input:focus { outline: none; border-color: var(--brand); }
+  .who { color: var(--faint); font-size: .85rem; white-space: nowrap; }
+  .who a { color: var(--soft); }
+
+  .chips { display: flex; gap: 8px; overflow-x: auto; padding: 0 0 12px; scrollbar-width: none; }
+  .chips::-webkit-scrollbar { display: none; }
+  .chip { flex: none; padding: 6px 12px; border: 1px solid var(--line); border-radius: 999px; background: var(--chip); text-decoration: none; font-size: .9rem; color: var(--soft); white-space: nowrap; }
+  .chip b { color: var(--text); font-weight: 600; }
+  .chip.on { background: var(--brand); border-color: var(--brand); color: var(--brand-ink); }
+  .chip.on b { color: var(--brand-ink); }
+
+  .tools { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 16px 0 6px; }
+  .tools .count { margin-right: auto; color: var(--soft); }
+  .tools .count b { color: var(--text); }
+  select, .tools input[type=number] { padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--text); font: inherit; font-size: .9rem; }
+  .tools input[type=number] { width: 120px; }
+  .reset { color: var(--soft); font-size: .9rem; }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 14px; padding: 10px 0 24px; }
+  .card { display: flex; flex-direction: column; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+  .pic { position: relative; aspect-ratio: 1 / 1; background: #fff; display: grid; place-items: center; }
+  .pic img { width: 100%; height: 100%; object-fit: contain; }
+  .pic .ph[hidden] { display: none; }
+  .pic .ph { display: grid; place-items: center; width: 100%; height: 100%; background: var(--surface-2); font-size: 4rem; }
+  .pic .ph small { display: block; font-size: .85rem; color: var(--soft); margin-top: 4px; text-align: center; }
+  .off { position: absolute; top: 10px; left: 10px; padding: 3px 9px; border-radius: 8px; background: var(--badge); color: #fff; font-weight: 800; font-size: .95rem; }
+  .ago { position: absolute; top: 10px; right: 10px; padding: 2px 8px; border-radius: 8px; background: rgba(0,0,0,.55); color: #fff; font-size: .78rem; }
+  .body { display: flex; flex-direction: column; gap: 6px; padding: 12px 14px 14px; flex: 1; }
+  .title { font-weight: 600; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; min-height: 2.6em; text-decoration: none; }
+  .title:hover { color: var(--brand); }
+  .prices { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+  .price { font-size: 1.35rem; font-weight: 800; color: var(--brand); }
+  .price.free { color: var(--good); }
+  .price.none { font-size: .95rem; font-weight: 600; color: var(--soft); }
+  .before { color: var(--faint); text-decoration: line-through; }
+  .meta { display: flex; flex-wrap: wrap; gap: 6px; font-size: .8rem; color: var(--soft); }
+  .tag { padding: 2px 8px; border-radius: 6px; background: var(--surface-2); }
+  .score { margin-left: auto; font-weight: 700; }
+  .score.hi { color: var(--good); }
+  .actions { display: flex; gap: 8px; margin-top: auto; padding-top: 6px; }
+  .btn { flex: 1; text-align: center; padding: 9px 10px; border-radius: 10px; background: var(--brand); color: var(--brand-ink); font-weight: 700; text-decoration: none; font-size: .92rem; }
+  .btn.ghost { flex: none; background: transparent; color: var(--soft); border: 1px solid var(--line); font-weight: 600; }
+  .more { display: block; margin: 0 auto 40px; padding: 12px 22px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); color: var(--text); font: inherit; font-weight: 600; cursor: pointer; }
+  .empty { padding: 60px 0; text-align: center; color: var(--soft); }
+  footer { padding: 20px 0 40px; color: var(--faint); font-size: .8rem; text-align: center; }
+
+  @media (max-width: 640px) {
+    .top-row { flex-wrap: wrap; gap: 10px; }
+    .search { order: 3; flex-basis: 100%; }
+    .who { margin-left: auto; }
+    .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+    .body { padding: 10px; }
+    .price { font-size: 1.15rem; }
+    .tools input[type=number] { width: 100px; }
+    .btn.ghost { display: none; }
+  }
+</style>
+</head>
+<body>
+<form id="f" method="get" action="/">
+<header class="top">
+  <div class="wrap">
+    <div class="top-row">
+      <a class="logo" href="/">🛍️ Caza<span>Chollos</span></a>
+      <div class="search"><input type="search" name="q" value="{{ f.q }}" placeholder='Busca: auriculares sony, "freidora de aire", portátil -reacondicionado' aria-label="Buscar ofertas"></div>
+      {% if email %}<div class="who">{{ email }} | <a href="/.auth/logout?post_logout_redirect_uri=/">Salir</a></div>{% endif %}
+    </div>
+    <nav class="chips" aria-label="Categorías">
+      <a class="chip {% if not f.category %}on{% endif %}" href="{{ link(category='') }}"><b>Todo</b></a>
+      {% for cat, n in page.categories %}
+        <a class="chip {% if f.category == cat %}on{% endif %}" href="{{ link(category=cat) }}">{{ icons.get(cat, '🏷️') }} <b>{{ labels.get(cat, cat) }}</b> {{ n }}</a>
+      {% endfor %}
+    </nav>
+  </div>
+</header>
+<input type="hidden" name="cat" value="{{ f.category }}">
+
+<main class="wrap">
+  <div class="tools">
+    <p class="count"><b>{{ page.total }}</b> {{ 'oferta' if page.total == 1 else 'ofertas' }}</p>
+    <select name="orden" aria-label="Ordenar">
+      {% for key, label in sorts.items() %}{% if key != 'relevancia' or f.q %}
+        <option value="{{ key }}" {% if f.sort == key %}selected{% endif %}>{{ label }}</option>
+      {% endif %}{% endfor %}
+    </select>
+    <select name="dto" aria-label="Descuento mínimo">
+      {% for d in [0, 20, 40, 60, 80] %}<option value="{{ d }}" {% if f.min_discount == d %}selected{% endif %}>{{ 'Cualquier descuento' if d == 0 else 'Desde -' ~ d ~ ' %' }}</option>{% endfor %}
+    </select>
+    <select name="tienda" aria-label="Tienda">
+      <option value="">Todas las tiendas</option>
+      {% for s in page.shops %}<option value="{{ s }}" {% if f.shop == s %}selected{% endif %}>{{ s }}</option>{% endfor %}
+    </select>
+    <select name="canal" aria-label="Canal">
+      <option value="">Todos los canales</option>
+      {% for c in page.channels %}<option value="{{ c }}" {% if f.channel == c %}selected{% endif %}>{{ c }}</option>{% endfor %}
+    </select>
+    <input type="number" name="max" min="0" step="1" inputmode="numeric" value="{{ f.max_price if f.max_price is not none else '' }}" placeholder="Precio máx. €" aria-label="Precio máximo">
+    {% if filtered %}<a class="reset" href="/">Quitar filtros</a>{% endif %}
+  </div>
+
+  {% if page.deals %}
+    <section class="grid" id="grid">{% include "_cards.html" %}</section>
+    {% if page.has_more %}<button class="more" type="button" id="more" data-next="{{ link(page=f.page + 1, partial=1) }}">Ver más ofertas</button>{% endif %}
+  {% else %}
+    <p class="empty">No hay ofertas con estos filtros. Prueba a quitar alguno.</p>
+  {% endif %}
+</main>
+</form>
+<footer>Ofertas de canales públicos de Telegram. Los precios pueden cambiar: compruébalos en la tienda.</footer>
+<script>
+  const form = document.getElementById('f');
+  form.querySelectorAll('select').forEach(s => s.addEventListener('change', () => form.submit()));
+  form.querySelector('[name=max]').addEventListener('change', () => form.submit());
+  // Sin imagen o si la tienda la retira: el icono de la categoría
+  function fallback(img) { const ph = img.nextElementSibling; img.remove(); if (ph) ph.hidden = false; }
+  document.addEventListener('error', e => { if (e.target.matches && e.target.matches('.pic img')) fallback(e.target); }, true);
+  const more = document.getElementById('more');
+  if (more) more.addEventListener('click', async () => {
+    more.disabled = true; more.textContent = 'Cargando...';
+    try {
+      const res = await fetch(more.dataset.next, { credentials: 'same-origin' });
+      const html = await res.text();
+      const box = document.createElement('div'); box.innerHTML = html;
+      const next = box.querySelector('[data-next]');
+      box.querySelectorAll('.card').forEach(c => document.getElementById('grid').appendChild(c));
+      if (next && next.dataset.next) { more.dataset.next = next.dataset.next; more.disabled = false; more.textContent = 'Ver más ofertas'; }
+      else more.remove();
+    } catch { more.disabled = false; more.textContent = 'Ver más ofertas'; }
+  });
+</script>
+</body>
+</html>

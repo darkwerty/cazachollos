@@ -2,6 +2,7 @@ import asyncio
 import hashlib
 import logging
 import os
+import re
 
 from sqlalchemy.future import select
 
@@ -12,13 +13,37 @@ from src.domain.ingestion.strategy import IngestionStrategy
 
 logger = logging.getLogger(__name__)
 
+# Posts the channel has marked as finished ("🚨 (OFERTA TERMINADA)", "AGOTADO"...)
+EXPIRED = re.compile(
+    r"oferta\s+(?:terminada|finalizada|caducada|expirada)|\bagotad[oa]s?\b|\bexpirad[oa]\b", re.IGNORECASE
+)
+IMAGE_IN_TEXT = re.compile(r"https://\S+?\.(?:jpe?g|png|webp)(?:\?\S*)?", re.IGNORECASE)
+
+
+def first_image_url(text: str) -> str | None:
+    """Some channels paste the picture as a link in the text (ganga.click/imagenespost/...jpg)."""
+    m = IMAGE_IN_TEXT.search(text)
+    return m.group(0) if m else None
+
 
 class IngestorService:
-    def __init__(self, strategy: IngestionStrategy, parser: DealParser | None = None, budget=None):
+    def __init__(self, strategy: IngestionStrategy, parser: DealParser | None = None, budget=None, alerts=None):
         self.strategy = strategy
         self.parser = parser or DealParser()
         self._budget = budget  # LLMBudget; created on first use so the tests need no database
+        self.alerts = alerts if alerts is not None else self._default_alerts()
         self.allowed_groups = self._load_allowed_groups()
+
+    @staticmethod
+    def _default_alerts():
+        """With BOT_TOKEN, every new deal is checked against the alerts of the Telegram bot."""
+        token = os.getenv("BOT_TOKEN")
+        if not token:
+            return None
+        from src.infrastructure.telegram.bot_api import BotAPI
+        from src.services.alerts import AlertNotifier
+
+        return AlertNotifier(BotAPI(token))
 
     async def _llm_allowed(self) -> bool:
         if self._budget is None:
@@ -112,6 +137,9 @@ class IngestorService:
 
         if not text:
             return
+        if EXPIRED.search(text):
+            logger.info("Message ignored: the deal has ended.")
+            return
 
         logger.info(f"Received message from {title} ({chat_id}): {text[:50]}...")
 
@@ -153,12 +181,20 @@ class IngestorService:
                 shop=parsed_data.get("shop"),
                 price_before=parsed_data.get("price_before"),
                 discount_percentage=parsed_data.get("discount_percentage"),
-                source=(parsed_data.get("source") or title)[:100],
+                source=(title or parsed_data.get("source") or "")[:100],  # the channel it was read from
                 raw_text=text,
+                image_url=meta.get("image_url") or first_image_url(text),
+                post_url=meta.get("post_url"),
             )
             session.add(new_deal)
             await session.commit()
             logger.info(f"Deal Saved: {new_deal.title}")
+
+        # 6. Alerts of the Telegram bot (never stops the ingestion)
+        if self.alerts is not None:
+            sent = await self.alerts.deal_saved(new_deal)
+            if sent:
+                logger.info("Alert sent for: %s", new_deal.title)
 
     async def start(self):
         logger.info("Ingestor Service Started...")

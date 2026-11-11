@@ -51,6 +51,16 @@ def test_parse_page_text_links_and_ids():
     assert p.date == datetime(2026, 11, 10, 20, 51, 29)
 
 
+def test_post_image_from_photo_or_preview():
+    photo = (
+        '<div class="tgme_widget_message" data-post="canal/9">'
+        '<a class="tgme_widget_message_photo_wrap" style="width:600px;background-image:url(\'https://cdn4.telesco.pe/file/a.jpg\')"></a>'
+        '<div class="tgme_widget_message_text">Oferta: 9,99€</div></div>'
+    )
+    [p] = parse_page(photo, "canal")
+    assert p.image_url == "https://cdn4.telesco.pe/file/a.jpg"
+
+
 def test_media_only_posts_are_skipped():
     assert parse_page(page([1], media_only=True), "canal") == []
 
@@ -101,7 +111,13 @@ def test_next_pass_goes_back_until_the_cursor():
 
     events = run(PublicChannelsStrategy(["https://t.me/canal"], cursor, fetch=fetch, delay_s=0))
     assert [e.source_metadata["msg_id"] for e in events] == list(range(71, 101))
-    assert events[0].source_metadata == {"chat_id": CHAT, "chat_title": "canal", "msg_id": 71}
+    assert events[0].source_metadata == {
+        "chat_id": CHAT,
+        "chat_title": "canal",
+        "msg_id": 71,
+        "image_url": None,
+        "post_url": "https://t.me/canal/71",
+    }
 
 
 def test_nothing_new_means_one_request():
@@ -196,3 +212,8 @@ def test_dashboard_access():
     assert not can_enter({}, allowed)
     assert can_enter({"X-Ms-Client-Principal-Name": "otra@example.com"}, allowed)
     assert can_enter({}, set())  # local, sin lista
+
+
+def test_service_messages_are_skipped():
+    html = '<div class="tgme_widget_message service_message" data-post="canal/7"><div class="tgme_widget_message_text">Canal pinned «Oferta: 5€»</div></div>'
+    assert parse_page(html, "canal") == []

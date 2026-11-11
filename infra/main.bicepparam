@@ -11,10 +11,15 @@ param pgPassword = readEnvironmentVariable('PG_PASSWORD')
 param googleClientId = readEnvironmentVariable('GOOGLE_CLIENT_ID', '')
 param googleClientSecret = readEnvironmentVariable('GOOGLE_CLIENT_SECRET', '')
 param allowedEmails = 'dani.algar02@gmail.com'
+param botToken = readEnvironmentVariable('BOT_TOKEN', '')
+param webhookSecret = readEnvironmentVariable('TELEGRAM_WEBHOOK_SECRET', '')
+param telegramBotUsername = 'qwertychollos_bot'
+param portfolioGoogleClientId = '180969024310-scukcmroa2k7brbfq3m3q573qdsakqk2.apps.googleusercontent.com'
 
 // Canales públicos (tienen vista web en t.me/s/<canal>). ninjachat es un grupo y linkscrewfinds no muestra
-// mensajes en la vista web: sin cuenta de Telegram no se pueden leer.
-param channels = 'canaldechollos,canaldescuentos,canalninja,chollo100x100,DonOFERTON_oficial,zchollos,hacooesp,BricoGangas,Baratisimo,chollacos,EnlacesyMarcasHacoo'
+// mensajes en la vista web: sin cuenta de Telegram no se pueden leer. hacooesp y EnlacesyMarcasHacoo se quitaron:
+// anuncian réplicas con «enlace camuflado» (productos falsificados).
+param channels = 'canaldechollos,canaldescuentos,canalninja,chollo100x100,DonOFERTON_oficial,zchollos,BricoGangas,Baratisimo,chollacos'
 
 param budgetAmount = 5
 param budgetEmails = [

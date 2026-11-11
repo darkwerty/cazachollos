@@ -1,0 +1,29 @@
+{% for d in page.deals %}
+<article class="card">
+  <a class="pic" href="{{ d.url or d.post_url or '#' }}" target="_blank" rel="noopener nofollow" tabindex="-1" aria-hidden="true">
+    {% if d.image_url %}<img src="{{ d.image_url }}" alt="" loading="lazy" referrerpolicy="no-referrer">{% endif %}
+    <span class="ph" {% if d.image_url %}hidden{% endif %}><span>{{ icons.get(d.category, '🏷️') }}<small>{{ d.shop or labels.get(d.category, '') }}</small></span></span>
+    {% if d.discount %}<span class="off">-{{ d.discount }} %</span>{% endif %}
+    <span class="ago">{{ ago(d.created_at) }}</span>
+  </a>
+  <div class="body">
+    <a class="title" href="{{ d.url or d.post_url or '#' }}" target="_blank" rel="noopener nofollow">{{ d.title }}</a>
+    <div class="prices">
+      {% if d.price is none %}<span class="price none">Precio en la tienda</span>
+      {% elif d.price == 0 %}<span class="price free">Gratis</span>
+      {% else %}<span class="price">{{ euros(d.price) }}</span>{% endif %}
+      {% if d.before and d.price is not none and d.before > d.price %}<span class="before">{{ euros(d.before) }}</span>{% endif %}
+    </div>
+    <div class="meta">
+      {% if d.shop %}<span class="tag">{{ d.shop }}</span>{% endif %}
+      <span class="tag">{{ labels.get(d.category, d.category) }}</span>
+      <span class="score {% if d.score >= 70 %}hi{% endif %}" title="Puntuación de 0 a 100">★ {{ d.score }}</span>
+    </div>
+    <div class="actions">
+      <a class="btn" href="{{ d.url or d.post_url or '#' }}" target="_blank" rel="noopener nofollow">Ver oferta</a>
+      {% if d.post_url %}<a class="btn ghost" href="{{ d.post_url }}" target="_blank" rel="noopener" title="Ver el mensaje en {{ d.channel }}">Telegram</a>{% endif %}
+    </div>
+  </div>
+</article>
+{% endfor %}
+{% if partial %}<span hidden data-next="{{ link(page=f.page + 1, partial=1) if page.has_more else '' }}"></span>{% endif %}

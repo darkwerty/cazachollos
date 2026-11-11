@@ -26,7 +26,7 @@ def test_missing_price_is_none_not_a_freebie():
 def test_explicit_gratis_is_a_freebie():
     result = parser_without_llm().parse("GRATIS: juego de PC esta semana\nhttps://store.epicgames.com/es-ES/p/x")
     assert result["price_sale"] == Decimal(0)
-    assert result["chollo_score"] == 100
+    assert result["chollo_score"] == 60
 
 
 def test_discount_from_both_prices():
@@ -145,3 +145,43 @@ def test_noise_words_only_as_whole_words():
 def test_title_has_no_leading_punctuation():
     text = "GRATIS: juego de PC para reclamar esta semana\nhttps://store.epicgames.com/es-ES/p/x"
     assert parser_without_llm().parse(text)["title"].startswith("juego de PC")
+
+
+def test_ended_deals_and_images_in_text():
+    from src.services.ingestor import EXPIRED, first_image_url
+
+    assert EXPIRED.search("🚨 (OFERTA TERMINADA): 20.97 €")
+    assert EXPIRED.search("Producto AGOTADO")
+    assert not EXPIRED.search("Oferta: 20 €, la que más se agota")
+    assert first_image_url("📖 Audiolibro https://ganga.click/imagenespost/cap_1.jpg #Amazon") == (
+        "https://ganga.click/imagenespost/cap_1.jpg"
+    )
+
+
+def test_pvp_ahora_is_the_current_price():
+    r = parser_without_llm().parse("Quiksilver Salt Water Zip\n✅PVP AHORA: 31.49 €🔥\nhttps://linkz.es/x")
+    assert r["price_sale"] == Decimal("31.49") and r["price_before"] is None
+
+
+def test_categories_from_title_hashtags_and_whole_words():
+    p = parser_without_llm()
+    assert p.parse("Pack 6 Desodorantes Dove\nOferta: 9€\nhttps://amazon.es/dp/X")["category"] == "belleza"
+    assert p.parse("Sudadera con cremallera\nOferta: 20€\nhttps://x.es")["category"] == "moda"
+    assert p.parse("Cartuchos Schneider\n#oficina\nNuevo Precio: 0.98 €\nhttps://go.x")["category"] == "oficina"
+    assert p.parse("Árbol rascador para Gatos\nOferta: 30€\nhttps://x.es")["category"] == "mascotas"
+    assert p.parse("Juego Mafia Trilogy para PS4\nOferta: 19€\nhttps://x.es")["category"] == "videojuegos"
+
+
+def test_clean_titles():
+    from src.services.parser import clean_title, is_generic_title
+
+    assert clean_title("Ventilador de techo con luz LED solo  ❗️ 🉐 (PVP: )") == "Ventilador de techo con luz LED"
+    assert clean_title("10 juegos Pc Steam desde  ❗️💥") == "10 juegos Pc Steam"
+    assert clean_title("POCO X8 Pro 5G 12GB 512GB solo ❗️") == "POCO X8 Pro 5G 12GB 512GB"
+    assert is_generic_title("CHOLLITO BRICO❗️ 🉐  🇪🇸") and is_generic_title("I9❗️")
+    assert not is_generic_title("Auriculares Sony WH-1000XM5")
+
+
+def test_promo_line_is_not_the_title():
+    text = "Código 14% en tu primer pedido: PRIMERACOMPRA\nZapatillas Nike Air Max 90\nOferta: 60€\nhttps://x.es"
+    assert parser_without_llm().parse(text)["title"].startswith("Zapatillas Nike")

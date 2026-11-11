@@ -1,4 +1,5 @@
 import re
+import unicodedata
 import logging
 from decimal import Decimal
 from typing import Optional, List
@@ -11,37 +12,154 @@ from src.services.llm_services import LLMProvider, make_llm_provider
 logger = logging.getLogger(__name__)
 
 
+# Lines that announce a promotion, not the product
+PROMO_LINE = re.compile(r"^(c[oó]digo|cup[oó]n|descuento|env[ií]o gratis|primer pedido)\b", re.IGNORECASE)
+# Titles that say nothing about the product: "CHOLLITO BRICO", "CUPÓN 50%", "I9"
+GENERIC_TITLE = re.compile(
+    r"^(chollit?o|chollazo|chollo|cholo|cup[oó]n|oferta|ofert[oó]n|descuento|top \d+)\b", re.IGNORECASE
+)
+TRAILING_WORDS = re.compile(r"(?:\s+(?:solo|sólo|desde|por|a|al|en|con|de|y))+\s*$", re.IGNORECASE)
+EMPTY_PARENS = re.compile(r"\(\s*[\w ]{0,12}:?\s*\)")
+
+
+def clean_title(title: str) -> str:
+    """Drops emojis, flags, invisible characters, empty "(PVP: )" and dangling words like "solo" or "desde"."""
+    out = "".join(ch for ch in title if unicodedata.category(ch)[0] in "LNPZ" or ch in "+&%$€'\"/")
+    out = EMPTY_PARENS.sub("", out)
+    out = re.sub(r"\s*(?:[—–-]{2,}>?|-->|—|–)\s*", " ", out)  # "NEW ERA —-> 5€"
+    out = re.sub(r"\s+", " ", out).strip(" -:|·,;")
+    for _ in range(3):
+        out = TRAILING_WORDS.sub("", out).strip(" -:|,;")
+    return out
+
+
+def is_generic_title(title: str) -> bool:
+    t = clean_title(title)
+    words = t.split()
+    return bool(GENERIC_TITLE.match(t)) or (len(words) <= 2 and (t.isupper() or len(t) < 8))
+
+
 class DealParser:
     def __init__(self, llm_provider: Optional[LLMProvider] = None):
         self.llm_provider = llm_provider or make_llm_provider()
 
         # Category keywords (expanded)
+        # Category keywords, checked IN ORDER: the specific ones first (a "juego de PS5" is a video game before
+        # electronics, a "freidora Cecotec" is kitchen before home). Short keywords (< 4) need word boundaries.
         self.categories_keywords = {
-            CategoryEnum.TECNOLOGIA: [
-                "movil",
-                "iphone",
-                "xiaomi",
-                "samsung",
-                "tv",
-                "portatil",
-                "laptop",
-                "ram",
-                "ssd",
-                "pixel",
-                "tablet",
-                "auriculares",
-                "sony",
-                "lg",
-                "apple",
-                "monitor",
-                "pc",
-                "ordenador",
-                "consola",
+            CategoryEnum.VIDEOJUEGOS: [
+                "videojuego",
                 "ps5",
+                "ps4",
+                "playstation",
                 "xbox",
                 "nintendo",
+                "switch",
+                "steam",
+                "juego de pc",
+                "juego para",
+                "mando",
+                "dualsense",
+                "gaming headset",
             ],
-            # Before HOGAR: "freidora Cecotec" is kitchen even if the brand is also in HOGAR
+            CategoryEnum.LIBROS: [
+                "libro",
+                "audiolibro",
+                "ebook",
+                "kindle unlimited",
+                "audible",
+                "novela",
+                "comic",
+                "manga",
+                "vinilo",
+                "blu-ray",
+                "bluray",
+                "dvd",
+                "pelicula",
+            ],
+            CategoryEnum.MASCOTAS: [
+                "gato",
+                "gatos",
+                "perro",
+                "perros",
+                "mascota",
+                "pienso",
+                "rascador",
+                "arenero",
+                "acuario",
+                "comedero",
+            ],
+            CategoryEnum.ALIMENTACION: [
+                "lomo",
+                "jamon",
+                "chorizo",
+                "queso",
+                "aceite de oliva",
+                "cafe en grano",
+                "capsulas",
+                "chocolate",
+                "galletas",
+                "frutos secos",
+                "pasas",
+                "kinder",
+                "lacasitos",
+                "cerveza",
+                "vino",
+                "tinto",
+                "ribera",
+                "rioja",
+                "whisky",
+                "ginebra",
+                "refresco",
+                "agua mineral",
+                "conservas",
+                "atun",
+                "pasta",
+                "arroz",
+                "cereales",
+                "turron",
+                "calendario de adviento",
+                "snack",
+                "proteina",
+            ],
+            CategoryEnum.BELLEZA: [
+                "desodorante",
+                "champu",
+                "gel de ducha",
+                "crema",
+                "serum",
+                "perfume",
+                "colonia",
+                "maquillaje",
+                "esmalte",
+                "pintalabios",
+                "rimel",
+                "protector solar",
+                "spf",
+                "cepillo de dientes",
+                "dientes",
+                "colgate",
+                "oral-b",
+                "afeitadora",
+                "depiladora",
+                "maquinilla",
+                "secador",
+                "plancha de pelo",
+                "vitamina",
+                "suplemento",
+                "colageno",
+                "preservativos",
+                "spray nasal",
+                "dove",
+                "nivea",
+                "rexona",
+                "loreal",
+                "l'oreal",
+                "garnier",
+                "isdin",
+                "neutrogena",
+                "olay",
+            ],
             CategoryEnum.COCINA: [
                 "sarten",
                 "olla",
@@ -53,49 +171,236 @@ class DealParser:
                 "horno",
                 "microondas",
                 "lavavajillas",
+                "cuchillo",
+                "vajilla",
+                "tupper",
+                "robot de cocina",
+                "thermomix",
+                "tostadora",
+                "parrilla",
+                "sandwichera",
+                "hervidor",
+                "exprimidor",
+            ],
+            CategoryEnum.BRICOLAJE: [
+                "taladro",
+                "atornillador",
+                "herramienta",
+                "bricolaje",
+                "llave",
+                "destornillador",
+                "sierra",
+                "lijadora",
+                "jardin",
+                "manguera",
+                "cortacesped",
+                "barbacoa",
+                "pintura",
+                "escalera",
+                "bosch professional",
+                "makita",
+                "dewalt",
+                "black+decker",
+                "einhell",
+                "ryobi",
+            ],
+            CategoryEnum.MOTOR: [
+                "coche",
+                "moto",
+                "neumatico",
+                "casco",
+                "candado moto",
+                "aceite motor",
+                "dashcam",
+                "patinete",
+                "bicicleta electrica",
+            ],
+            CategoryEnum.OFICINA: [
+                "cartucho",
+                "tinta",
+                "toner",
+                "impresora",
+                "papel",
+                "boligrafo",
+                "pluma estilografica",
+                "cuaderno",
+                "agenda",
+                "mochila escolar",
+                "estuche",
+                "calculadora",
+            ],
+            CategoryEnum.TECNOLOGIA: [
+                "movil",
+                "smartphone",
+                "iphone",
+                "xiaomi",
+                "samsung",
+                "redmi",
+                "tv",
+                "televisor",
+                "portatil",
+                "laptop",
+                "ram",
+                "ssd",
+                "disco duro",
+                "pixel",
+                "tablet",
+                "ipad",
+                "auriculares",
+                "altavoz",
+                "sony",
+                "lg",
+                "apple",
+                "monitor",
+                "pc",
+                "ordenador",
+                "router",
+                "repetidor",
+                "wifi",
+                "smartwatch",
+                "reloj",
+                "camara",
+                "bateria externa",
+                "powerbank",
+                "cargador",
+                "cable usb",
+                "usb",
+                "teclado",
+                "raton",
+                "echo dot",
+                "alexa",
+                "fire tv",
+                "chromecast",
+                "proyector",
+                "barra de sonido",
+                "videotimbre",
+            ],
+            CategoryEnum.JUGUETES: [
+                "lego",
+                "playmobil",
+                "muñeca",
+                "juguete",
+                "juego de mesa",
+                "puzzle",
+                "infantil",
+                "bebe",
+                "pañales",
+                "carrito",
+                "peluche",
+                "funko",
+                "hot wheels",
+                "barbie",
+            ],
+            CategoryEnum.DEPORTE: [
+                "pesa",
+                "mancuerna",
+                "bici",
+                "bicicleta",
+                "gym",
+                "deporte",
+                "fitness",
+                "running",
+                "futbol",
+                "baloncesto",
+                "padel",
+                "raqueta",
+                "esterilla",
+                "yoga",
+                "garmin",
+                "chandal",
+                "decathlon",
+                "under armour",
+                "asics",
+            ],
+            CategoryEnum.MODA: [
+                "camiseta",
+                "pantalon",
+                "vaquero",
+                "jeans",
+                "zapatos",
+                "zapatillas",
+                "botas",
+                "sandalias",
+                "nike",
+                "adidas",
+                "ropa",
+                "abrigo",
+                "chaqueta",
+                "sudadera",
+                "jersey",
+                "sueter",
+                "puma",
+                "vans",
+                "converse",
+                "vestido",
+                "falda",
+                "bolso",
+                "mochila",
+                "cartera",
+                "gafas de sol",
+                "calcetines",
+                "bañador",
+                "tommy hilfiger",
+                "levis",
+                "ralph lauren",
+                "lacoste",
+                "the north face",
+                "quiksilver",
+                "desigual",
+                "ugg",
+                "golden goose",
+                "stone island",
+                "corteiz",
+                "nude project",
+                "moncler",
+                "gucci",
+                "prada",
+                "zara",
+                "shein",
             ],
             CategoryEnum.HOGAR: [
                 "silla",
                 "mesa",
                 "sofa",
                 "cama",
-                "taladro",
+                "colchon",
+                "almohada",
+                "sabanas",
+                "edredon",
                 "mueble",
-                "bricolaje",
-                "herramienta",
-                "jardin",
+                "estanteria",
+                "lampara",
+                "bombilla",
                 "salon",
                 "baño",
+                "toalla",
                 "aspirador",
+                "aspiradora",
+                "robot aspirador",
                 "rowenta",
                 "cecotec",
+                "dyson",
+                "roomba",
+                "conga",
+                "fregona",
+                "detergente",
+                "suavizante",
+                "lavadora",
+                "secadora",
+                "frigorifico",
+                "calefactor",
+                "ventilador",
+                "humidificador",
+                "purificador",
+                "cortina",
+                "alfombra",
+                "decoracion",
+                "navidad",
+                "arbol de navidad",
+                "maleta",
+                "maletas",
+                "candado",
             ],
-            CategoryEnum.MODA: [
-                "camiseta",
-                "pantalon",
-                "zapatos",
-                "botas",
-                "nike",
-                "adidas",
-                "ropa",
-                "abrigo",
-                "zapatillas",
-                "puma",
-                "vans",
-            ],
-            CategoryEnum.DEPORTE: [
-                "pesa",
-                "bici",
-                "gym",
-                "proteina",
-                "suplemento",
-                "deporte",
-                "fitness",
-                "running",
-                "futbol",
-                "baloncesto",
-            ],
-            CategoryEnum.JUGUETES: ["lego", "playmobil", "muñeca", "juguete", "juego", "infantil"],
         }
 
         # Mapping domain/keywords to Shop names
@@ -245,8 +550,8 @@ class DealParser:
         # Improved regex for Price Before (handling + sign, etc)
         # Matches: "PVP: +649€", "Antes: 100", "Original: $50", "Was: 200", "Previous: 200"
         before_patterns = [
-            r"(?:Antes|PVP|Original|Previous|RRP|Valorado en|Was|Ojo)[:\s]*[~+]?([\d.,]+[\s]*(?:€|EUR|USD|\$))",
-            r"(?:Antes|PVP|Original|Previous|RRP|Valorado en|Was|Ojo)[:\s]*[~+]?((?:€|EUR|USD|\$)[\s]*[\d.,]+)",
+            r"(?:Antes|PVP(?!\s*ahora)|Original|Previous|RRP|Valorado en|Was|Precio anterior|Precio habitual)[:\s]*[~+]?([\d.,]+[\s]*(?:€|EUR|USD|\$))",
+            r"(?:Antes|PVP(?!\s*ahora)|Original|Previous|RRP|Valorado en|Was|Precio anterior|Precio habitual)[:\s]*[~+]?((?:€|EUR|USD|\$)[\s]*[\d.,]+)",
             r"PVtR[\s:*+]*([\d.,]+)",
             # Pattern for struck-through prices could be hard in plain text, but sometimes explicit
         ]
@@ -261,7 +566,7 @@ class DealParser:
 
         # Sale Price
         sale_patterns = [
-            r"(?:Oferta|Precio|Ahora|Solo|Bajada a)[\s:*]*([\d.,]+[\s]*(?:€|EUR|USD|\$))",
+            r"(?:PVP ahora|Nuevo precio|Oferta|Precio|Ahora|Solo|Bajada a|Por)[\s:*]*([\d.,]+[\s]*(?:€|EUR|USD|\$))",
             r"(?:Oferta|Precio|Ahora|Solo|Bajada a)[\s:*]*((?:€|EUR|USD|\$)[\s]*[\d.,]+)",
         ]
 
@@ -410,6 +715,10 @@ class DealParser:
             # 1. Position Score (Earlier is better)
             score += 10 - i * 2
 
+            # Promo lines are not the product ("Código 14% en tu primer pedido", "Cupón: ...")
+            if PROMO_LINE.match(candidate):
+                score -= 25
+
             # 2. Brand Detection (Huge Boost)
             line_lower = candidate.lower()
             for brand in self.brands:
@@ -462,31 +771,81 @@ class DealParser:
                 best_score = score
                 best_candidate = candidate
 
-        if best_candidate and len(best_candidate) > 3:
-            return best_candidate
+        if best_candidate and len(clean_title(best_candidate)) > 3:
+            return clean_title(best_candidate)
 
         # Fallback: Just return cleaned first line
         fallback = lines[0]
         fallback = re.sub(r"https?://\S+", "", fallback).strip()
-        return fallback[:100]
+        return clean_title(fallback)[:100] or fallback[:100]
 
-    def determine_category_heuristic(self, text: str, title: str) -> CategoryEnum:
-        combined = (text + " " + title).lower()
+    # Hashtags that some channels put on every post (#moda, #electronica...): the most reliable signal
+    HASHTAG_CATEGORIES = {
+        "electronica": CategoryEnum.TECNOLOGIA,
+        "tecnologia": CategoryEnum.TECNOLOGIA,
+        "informatica": CategoryEnum.TECNOLOGIA,
+        "moviles": CategoryEnum.TECNOLOGIA,
+        "videojuegos": CategoryEnum.VIDEOJUEGOS,
+        "gaming": CategoryEnum.VIDEOJUEGOS,
+        "hogar": CategoryEnum.HOGAR,
+        "casa": CategoryEnum.HOGAR,
+        "cocina": CategoryEnum.COCINA,
+        "bricolaje": CategoryEnum.BRICOLAJE,
+        "jardin": CategoryEnum.BRICOLAJE,
+        "herramientas": CategoryEnum.BRICOLAJE,
+        "moda": CategoryEnum.MODA,
+        "ropa": CategoryEnum.MODA,
+        "calzado": CategoryEnum.MODA,
+        "belleza": CategoryEnum.BELLEZA,
+        "salud": CategoryEnum.BELLEZA,
+        "cuidadopersonal": CategoryEnum.BELLEZA,
+        "deporte": CategoryEnum.DEPORTE,
+        "deportes": CategoryEnum.DEPORTE,
+        "juguetes": CategoryEnum.JUGUETES,
+        "bebe": CategoryEnum.JUGUETES,
+        "alimentacion": CategoryEnum.ALIMENTACION,
+        "supermercado": CategoryEnum.ALIMENTACION,
+        "mascotas": CategoryEnum.MASCOTAS,
+        "libros": CategoryEnum.LIBROS,
+        "oficina": CategoryEnum.OFICINA,
+        "papeleria": CategoryEnum.OFICINA,
+        "motor": CategoryEnum.MOTOR,
+        "coche": CategoryEnum.MOTOR,
+    }
 
-        replacements = (("á", "a"), ("é", "e"), ("í", "i"), ("ó", "o"), ("ú", "u"))
-        for a, b in replacements:
-            combined = combined.replace(a, b)
+    @staticmethod
+    def _plain(text: str) -> str:
+        text = text.lower()
+        for a, b in (("á", "a"), ("é", "e"), ("í", "i"), ("ó", "o"), ("ú", "u"), ("ü", "u")):
+            text = text.replace(a, b)
+        return text
 
+    def _keyword_category(self, text: str) -> CategoryEnum | None:
         for category, keywords in self.categories_keywords.items():
             for k in keywords:
-                # If keyword is short (< 4 chars), require word boundary
-                if len(k) < 4:
-                    if re.search(r"\b" + re.escape(k) + r"\b", combined):
-                        return category
-                else:
-                    if k in combined:
-                        return category
-        return CategoryEnum.OTROS
+                # Whole words (plural allowed): "crema" must not match "cremallera", nor "tinto" "distinto"
+                if re.search(r"(?<!\w)" + re.escape(self._plain(k)) + r"(?:s|es)?(?!\w)", text):
+                    return category
+        return None
+
+    def determine_category_heuristic(self, text: str, title: str) -> CategoryEnum:
+        plain_text = self._plain(text)
+        for tag in re.findall(r"#(\w+)", plain_text):
+            if tag in self.HASHTAG_CATEGORIES:
+                return self.HASHTAG_CATEGORIES[tag]
+        # The title says what the product is; the rest of the message has slogans and footers
+        return self._keyword_category(self._plain(title)) or self._keyword_category(plain_text) or CategoryEnum.OTROS
+
+    # Words that move the score a little (the discount is what matters)
+    SCORE_KEYWORDS = {
+        "minimo historico": 10,
+        "error de precio": 15,
+        "chollazo": 3,
+        "liquidacion": 5,
+        "reacondicionado": -10,
+        "usado": -10,
+        "segunda mano": -10,
+    }
 
     def calculate_score(
         self,
@@ -496,59 +855,26 @@ class DealParser:
         discount_percentage: Optional[int] = None,
     ) -> int:
         """
-        Calculates a 'chollo_score' from 0 to 100 based on discount and keywords.
-        A missing price (None) is not a freebie: only an explicit 0 gets the maximum.
+        'chollo_score' from 0 to 100. With a known discount, mostly the discount (50 % -> 65, 70 % -> 83);
+        without one, 35. Keywords add or subtract a little. A freebie (explicit 0 €) gets 60, not 100: "free with
+        a trial" is common and not the best deal of the day.
         """
-        score = 50  # Base score
+        if discount_percentage is None and price_sale and price_before and price_before > price_sale:
+            discount_percentage = int((price_before - price_sale) / price_before * 100)
+        if discount_percentage is None:
+            match = re.search(r"(\d{1,2})\s*%\s*(?:dto|descuento|off|menos)", text, re.IGNORECASE)
+            discount_percentage = int(match.group(1)) if match else None
 
-        # 1. Discount Bonus
-        if discount_percentage:
-            score += discount_percentage
-        elif price_sale and price_before and price_before > price_sale:
-            try:
-                # Calculate percentage discount
-                discount_pct = (price_before - price_sale) / price_before
-                # Add points: e.g. 50% off -> +50 points
-                score += int(discount_pct * 100)
-            except (ArithmeticError, TypeError):
-                pass
-
-        # 2. Implied Discount (if no before price found and no discount_percentage provided)
-        elif not price_before:
-            # Look for "50% descuento" in text
-            match = re.search(r"(\d+)%\s*(?:dto|descuento|off)", text, re.IGNORECASE)
-            if match:
-                try:
-                    pct = int(match.group(1))
-                    score += pct
-                except ValueError:
-                    pass
-
-        # 3. Freebie Bonus (explicit 0, never a missing price)
         if price_sale is not None and price_sale == 0:
-            return 100
+            score = 60.0
+        elif discount_percentage:
+            score = 20 + 0.9 * min(discount_percentage, 95)
+        else:
+            score = 35.0
 
-        # 4. Keyword Bonus
-        text_lower = text.lower()
-        keywords = {
-            "mínimo histórico": 20,
-            "minimo historico": 20,
-            "error de precio": 30,
-            "chollazo": 10,
-            "brutal": 5,
-            "chollo": 5,
-            "liquidación": 10,
-            "liquidacion": 10,
-            "reacondicionado": -10,
-            "usado": -10,
-        }
-
-        for kw, bonus in keywords.items():
-            if kw in text_lower:
-                score += bonus
-
-        # Cap score
-        return max(0, min(100, score))
+        plain = self._plain(text)
+        score += sum(bonus for kw, bonus in self.SCORE_KEYWORDS.items() if kw in plain)
+        return max(0, min(100, round(score)))
 
     @property
     def llm_enabled(self) -> bool:
@@ -562,6 +888,7 @@ class DealParser:
             result.get("price_sale") is None
             or result.get("category") in (CategoryEnum.OTROS, CategoryEnum.OTROS.value)
             or not 8 <= len(title) <= 120
+            or is_generic_title(title)
         )
 
     def parse(self, text: str, use_llm: bool = True) -> dict:
@@ -612,7 +939,7 @@ class DealParser:
 
         # Decide Title
         if llm_data.get("title") and llm_data.get("confidence", 0) > 0.7:
-            title = llm_data["title"]
+            title = clean_title(llm_data["title"]) or llm_data["title"]
         else:
             title = self.extract_title_heuristic(text, url)
 
