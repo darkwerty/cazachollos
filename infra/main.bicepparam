@@ -17,9 +17,8 @@ param telegramBotUsername = 'qwertychollos_bot'
 param portfolioGoogleClientId = '180969024310-scukcmroa2k7brbfq3m3q573qdsakqk2.apps.googleusercontent.com'
 
 // Canales públicos (tienen vista web en t.me/s/<canal>). ninjachat es un grupo y linkscrewfinds no muestra
-// mensajes en la vista web: sin cuenta de Telegram no se pueden leer. hacooesp y EnlacesyMarcasHacoo se quitaron:
-// anuncian réplicas con «enlace camuflado» (productos falsificados).
-param channels = 'canaldechollos,canaldescuentos,canalninja,chollo100x100,DonOFERTON_oficial,zchollos,BricoGangas,Baratisimo,chollacos'
+// mensajes en la vista web: sin cuenta de Telegram no se pueden leer.
+param channels = 'canaldechollos,canaldescuentos,canalninja,chollo100x100,DonOFERTON_oficial,zchollos,hacooesp,BricoGangas,Baratisimo,chollacos,EnlacesyMarcasHacoo'
 
 param budgetAmount = 5
 param budgetEmails = [
