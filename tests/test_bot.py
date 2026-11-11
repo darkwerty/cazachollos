@@ -145,3 +145,11 @@ def test_open_to_everyone_with_a_search_limit():
     assert "Auriculares" in reply(c, "sony", user=43)  # each person has their own limit
     now[0] = 3601
     assert "Auriculares" in reply(c, "sony", user=42)
+
+
+def test_httpx_never_logs_request_urls():
+    import logging
+
+    import src.infrastructure.telegram.bot_api  # noqa: F401
+
+    assert logging.getLogger("httpx").getEffectiveLevel() >= logging.WARNING

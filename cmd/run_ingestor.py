@@ -16,6 +16,8 @@ from src.services.schedule import within_active_hours
 load_dotenv()
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO").upper())
 logger = logging.getLogger("cazachollos.ingestor")
+for _quiet in ("httpx", "httpcore"):  # their URLs can carry the bot token
+    logging.getLogger(_quiet).setLevel(logging.WARNING)
 
 
 async def main() -> int:
