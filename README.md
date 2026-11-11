@@ -1,8 +1,8 @@
 # CazaChollos
 
-Los grupos de ofertas de Telegram son un río de mensajes repetidos y sin estructura. CazaChollos los escucha,
-saca de cada mensaje el producto, el precio, la tienda y el enlace limpio, descarta los repetidos y lo guarda en
-PostgreSQL para poder buscar «auriculares sony» y ver esas ofertas, sin duplicados y con las mejores arriba.
+Los grupos de ofertas de Telegram son un río de mensajes sin estructura. CazaChollos los escucha, saca de
+cada mensaje el producto, el precio, la tienda y el enlace limpio y lo guarda en PostgreSQL para poder buscar
+«auriculares sony» y ver esas ofertas con las mejores arriba.
 
 ## Cómo funciona
 
